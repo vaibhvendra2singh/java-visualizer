@@ -1,0 +1,474 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+
+  /* Ultra-high-contrast gray/white scale to maximize readability on dark backgrounds */
+  --color-zinc-50: #ffffff;
+  --color-zinc-100: #ffffff;
+  --color-zinc-200: #ffffff;
+  --color-zinc-250: #ffffff;
+  --color-zinc-300: #fafafa;
+  --color-zinc-350: #fafafa;
+  --color-zinc-400: #fafafa;
+  --color-zinc-450: #f4f4f7;
+  --color-zinc-500: #ededf0;
+  --color-zinc-550: #e4e4e7;
+  --color-zinc-600: #d4d4d8;
+  --color-zinc-650: #c4c4c7;
+  --color-zinc-700: #b5b5b8;
+  --color-zinc-750: #303035;
+  --color-zinc-800: #242428;
+  --color-zinc-850: #1b1b1e;
+  --color-zinc-900: #131316;
+  --color-zinc-950: #0d0d10;
+}
+
+/* Ambient gradient mesh background animation */
+@keyframes ambient-mesh {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.ambient-bg {
+  background: radial-gradient(circle at 15% 15%, rgba(20, 20, 24, 0.95) 0%, rgba(13, 13, 16, 1) 70%),
+              radial-gradient(circle at 85% 85%, rgba(60, 60, 75, 0.04) 0%, transparent 50%),
+              radial-gradient(circle at 50% 15%, rgba(255, 255, 255, 0.01) 0%, transparent 45%);
+  background-size: 200% 200%;
+  animation: ambient-mesh 16s ease-in-out infinite;
+}
+
+/* Frosted glass panel styling */
+.frosted-glass-card {
+  background: rgba(19, 19, 23, 0.72);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.55);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.frosted-glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 48px 0 rgba(0, 0, 0, 0.65);
+}
+
+/* Custom dark theme layout properties */
+body {
+  font-family: var(--font-sans);
+  background-color: #0d0d10; /* dull matte black background */
+  color: #ffffff;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar customizations */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* Glowing CodeMirror active line highlighting */
+.cm-highlight-line {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-left: 4px solid #ffffff !important;
+  box-shadow: inset 6px 0 16px rgba(255, 255, 255, 0.04);
+  position: relative;
+  transition: all 0.2s ease-in-out;
+}
+
+.light-mode .cm-highlight-line {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  border-left: 4px solid #000000 !important;
+  box-shadow: inset 6px 0 16px rgba(0, 0, 0, 0.03);
+}
+
+/* Retro console blinking cursor */
+@keyframes blink {
+  50% { opacity: 0; }
+}
+.animate-cursor {
+  animation: blink 1s step-end infinite;
+}
+
+/* Dash offset flow for pointer arrows */
+@keyframes dash-flow {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.animate-dash-flow {
+  stroke-dashoffset: 20;
+  animation: dash-flow 0.8s linear infinite;
+}
+
+/* Custom transitions and scroll margins */
+.visualizer-card {
+  backdrop-filter: blur(12px);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Fade-in animation for execution trace steps */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* Custom range slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: #27272a;
+  border-radius: 9999px;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 2px solid #3f3f46;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.35);
+  transform: scale(1.15);
+}
+
+input[type="range"]::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 2px solid #3f3f46;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+/* Subtle noise texture overlay */
+.noise-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* Smooth selection color */
+::selection {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+/* Global text contrast enhancements for white/light-gray texts */
+.text-white,
+.text-zinc-50,
+.text-zinc-100,
+.text-zinc-200,
+.text-zinc-250,
+.text-zinc-300,
+.text-zinc-350,
+.text-zinc-400 {
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.15), 0 0 3px rgba(255, 255, 255, 0.1) !important;
+  letter-spacing: 0.01em;
+}
+
+/* CodeMirror high-contrast syntax overrides to make Java code extremely bright and readable */
+.cm-editor {
+  background-color: transparent !important;
+}
+
+.cm-editor .cm-scroller {
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+}
+
+.cm-editor .cm-content {
+  color: #ffffff !important;
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.15), 0 0 3px rgba(255, 255, 255, 0.1) !important;
+}
+
+.cm-editor .cm-cursor {
+  border-left-color: #ffffff !important;
+  border-left-width: 2px !important;
+}
+
+/* Token highlighting colors - brightened and high contrast */
+.cm-editor .tok-keyword,
+.cm-editor .tok-typeName,
+.cm-editor .tok-namespace {
+  color: #ff9ef3 !important; /* bright vibrant magenta/pink */
+  font-weight: 700 !important;
+}
+
+.cm-editor .tok-variableName,
+.cm-editor .tok-definition {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.cm-editor .tok-string {
+  color: #fef08a !important; /* very bright yellow */
+  font-weight: 500 !important;
+}
+
+.cm-editor .tok-number {
+  color: #c084fc !important; /* very bright light purple */
+  font-weight: 500 !important;
+}
+
+.cm-editor .tok-comment {
+  color: #94a3b8 !important; /* light slate gray (very readable) */
+  font-style: italic !important;
+}
+
+.cm-editor .tok-bool {
+  color: #ff8b94 !important; /* bright rose */
+  font-weight: 600 !important;
+}
+
+/* Fallback/traditional CodeMirror classes */
+.cm-keyword {
+  color: #ff9ef3 !important;
+  font-weight: 700 !important;
+}
+.cm-type {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+.cm-variable {
+  color: #ffffff !important;
+}
+.cm-string {
+  color: #fef08a !important;
+}
+.cm-number {
+  color: #c084fc !important;
+}
+.cm-comment {
+  color: #94a3b8 !important;
+}
+
+/* Make sure active line highlight is bright but doesn't wash out code */
+.cm-activeLine {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   LIGHT THEME OVERRIDES
+   ────────────────────────────────────────────────────────────────────────── */
+.light-mode {
+  /* Recalibrate theme variables for light mode */
+  --color-zinc-50: #000000;
+  --color-zinc-100: #000000;
+  --color-zinc-200: #000000;
+  --color-zinc-250: #000000;
+  --color-zinc-300: #000000;
+  --color-zinc-350: #000000;
+  --color-zinc-400: #000000;
+  --color-zinc-450: #000000;
+  --color-zinc-500: #000000;
+  --color-zinc-550: #000000;
+  --color-zinc-600: #000000;
+  --color-zinc-650: #000000;
+  --color-zinc-700: #000000;
+  --color-zinc-750: #000000;
+  --color-zinc-800: #000000;
+  --color-zinc-850: #000000;
+  --color-zinc-900: #f2f2f7;
+  --color-zinc-950: #ffffff;
+}
+
+/* Light mode body and container overrides */
+.light-mode body {
+  background-color: #f9fafb !important;
+  color: #09090b !important;
+}
+
+/* Light mode ambient background mesh */
+.light-mode .ambient-bg {
+  background: radial-gradient(circle at 15% 15%, rgba(243, 244, 246, 0.9) 0%, rgba(255, 255, 255, 1) 70%),
+              radial-gradient(circle at 85% 85%, rgba(229, 231, 235, 0.5) 0%, transparent 50%) !important;
+  animation: none !important;
+}
+
+/* Light mode card styling (white glass slates) */
+.light-mode .frosted-glass-card {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid var(--color-zinc-750) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04) !important;
+  color: #09090b !important;
+}
+
+.light-mode .frosted-glass-card:hover {
+  border-color: rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Text overrides in light mode */
+.light-mode .text-white {
+  color: #000000 !important;
+  text-shadow: none !important;
+}
+
+/* Header Text styling in light mode */
+.light-mode header h1 {
+  background: none !important;
+  color: #09090b !important;
+  -webkit-text-fill-color: #09090b !important;
+}
+
+.light-mode header span {
+  background: #09090b !important;
+  opacity: 0.25 !important;
+  box-shadow: none !important;
+}
+
+/* Console details in light mode */
+.light-mode .ConsoleView_ConsoleBody,
+.light-mode .bg-black {
+  background-color: #ffffff !important;
+  color: #09090b !important;
+}
+
+/* Button & interactive highlights in light mode */
+.light-mode .bg-zinc-900,
+.light-mode .bg-zinc-900\/60,
+.light-mode .bg-zinc-900\/90 {
+  background-color: #f4f4f7 !important;
+}
+
+.light-mode .border-zinc-750 {
+  border-color: var(--color-zinc-750) !important;
+}
+.light-mode .border-zinc-800 {
+  border-color: var(--color-zinc-800) !important;
+}
+.light-mode .border-zinc-850 {
+  border-color: var(--color-zinc-850) !important;
+}
+
+/* Active trace highlighting in CodeEditor */
+.light-mode .cm-highlight-line {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  border-left: 4px solid #000000 !important;
+}
+
+/* CodeMirror Light Theme overrides */
+.light-mode .cm-editor {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+.light-mode .cm-content {
+  color: #000000 !important;
+  text-shadow: none !important;
+}
+
+.light-mode .cm-gutters {
+  background-color: #f4f4f7 !important;
+  color: #71717a !important;
+  border-right: 1px solid #e4e4e7 !important;
+}
+
+.light-mode .cm-cursor {
+  border-left-color: #000000 !important;
+}
+
+/* CodeMirror token highlights in light mode */
+.light-mode .cm-editor .tok-keyword,
+.light-mode .cm-editor .tok-typeName,
+.light-mode .cm-editor .tok-namespace,
+.light-mode .cm-keyword {
+  color: #d946ef !important; /* magenta keywords */
+  font-weight: 700 !important;
+}
+
+.light-mode .cm-editor .tok-variableName,
+.light-mode .cm-editor .tok-definition,
+.light-mode .cm-variable,
+.light-mode .cm-type {
+  color: #000000 !important;
+  font-weight: 600 !important;
+}
+
+.light-mode .cm-editor .tok-string,
+.light-mode .cm-string {
+  color: #ca8a04 !important; /* dark yellow/gold for strings */
+}
+
+.light-mode .cm-editor .tok-number,
+.light-mode .cm-number {
+  color: #7c3aed !important; /* purple for numbers */
+}
+
+.light-mode .cm-editor .tok-comment,
+.light-mode .cm-comment {
+  color: #64748b !important; /* slate comments */
+}
+
+.light-mode .cm-editor .tok-bool {
+  color: #e11d48 !important; /* red for booleans */
+}
+
+/* Active Step logs in Console Evaluator for Light Mode */
+.light-mode .bg-white\/\[0\.02\] {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+.light-mode .border-l-2 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Buttons in light mode header and controls */
+.light-mode .bg-zinc-950 {
+  background-color: #ffffff !important;
+}
+
+.light-mode .text-white {
+  color: #000000 !important;
+}
+
+.light-mode .bg-zinc-850 {
+  background-color: var(--color-zinc-900) !important;
+  color: #000000 !important;
+  border-color: var(--color-zinc-750) !important;
+}
+
+.light-mode .bg-zinc-850:hover {
+  background-color: var(--color-zinc-800) !important;
+}
+
+
