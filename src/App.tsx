@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { PlaybackProvider, usePlayback } from './state/PlaybackContext';
-import { AIProvider, useAI } from './state/AIContext';
+import { AIProvider } from './state/AIContext';
 import { CodeEditor } from './components/CodeEditor';
 import { ExecutionVisualizer } from './components/ExecutionVisualizer';
 import { CallStackView } from './components/CallStackView';
@@ -8,14 +8,12 @@ import { HeapView } from './components/HeapView';
 import { ConsoleView } from './components/ConsoleView';
 import { PlaybackControls } from './components/PlaybackControls';
 import { SvgArrows } from './components/SvgArrows';
-import { Sun, Moon, Cpu, BookOpen, Sparkles } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import { VariableTracker } from './components/VariableTracker';
 import { FloatingModules } from './components/FloatingModules';
-import { motion, AnimatePresence } from 'framer-motion';
 
 const AppContent: React.FC = () => {
-  const { theme, toggleTheme, activeStep } = usePlayback();
-  const { aiEnabled } = useAI();
+  const { theme, toggleTheme } = usePlayback();
 
   // Apply light-mode class to HTML root element
   useEffect(() => {

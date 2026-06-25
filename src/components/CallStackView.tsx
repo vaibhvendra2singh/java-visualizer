@@ -159,24 +159,12 @@ const VariableRow: React.FC<{
   frameId: string;
   isChanged?: boolean;
 }> = ({ varState, frameId, isChanged }) => {
-  const { currentStepIndex, hoveredRefId, setHoveredRefId } = usePlayback();
+  const { hoveredRefId, setHoveredRefId } = usePlayback();
   const { name, type, value } = varState;
   const elementId = `stack-var-${frameId}-${name}`;
 
   const isRef = value.type === 'reference';
   const isHovered = isRef && value.refId !== null && value.refId === hoveredRefId;
-
-  const getValueStr = () => {
-    if (value.type === 'primitive') {
-      return value.value === null
-        ? 'null'
-        : typeof value.value === 'string'
-        ? `"${value.value}"`
-        : String(value.value);
-    } else {
-      return value.refId === null ? 'null' : `ref@${value.refId}`;
-    }
-  };
 
   return (
     <div 

@@ -43,8 +43,7 @@ export const SvgArrows: React.FC = () => {
       const heap = activeStep.heap || {};
 
       // Identify inlined 2D array structures to avoid drawing arrows to them
-      Object.entries(heap).forEach(([rawRefId, obj]) => {
-        const refId = Number(rawRefId);
+      Object.entries(heap).forEach(([_, obj]) => {
         if (obj.type === 'object') {
           Object.values(obj.fields).forEach((field) => {
             if (field.value.type === 'reference' && field.value.refId !== null) {
