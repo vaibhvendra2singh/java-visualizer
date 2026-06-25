@@ -39,8 +39,8 @@ export const FloatingModules: React.FC = () => {
     try {
       const res = await explainConcept(searchQuery);
       setSearchResult(res);
-    } catch (err) {
-      setSearchResult('Sorry, I had trouble fetching an explanation. Please try again!');
+    } catch (err: any) {
+      setSearchResult(`Sorry, I had trouble fetching an explanation. Please try again! (Error: ${err?.message || err})`);
     } finally {
       setIsSearching(false);
     }

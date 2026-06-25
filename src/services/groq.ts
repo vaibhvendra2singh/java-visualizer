@@ -1,4 +1,7 @@
 // Groq Cloud API service for AI-powered code narration
+// Note: In production (Vercel), GROQ_API_KEY will be empty in the client bundle.
+// The request will be proxied via the Vercel Serverless Function (api/groq.js)
+// which securely attaches the server-side GROQ_API_KEY environment variable.
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
 const MODEL = 'llama-3.3-70b-versatile';
 

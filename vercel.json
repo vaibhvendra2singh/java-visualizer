@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/groq/:path*",
-      "destination": "https://api.groq.com/:path*"
+      "destination": "/api/groq"
     },
     {
       "source": "/(.*)",
