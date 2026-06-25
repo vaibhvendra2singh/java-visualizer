@@ -84,3 +84,5 @@ Open `http://localhost:5173/` in your browser.
    * **Key**: `VITE_GROQ_API_KEY`
    * **Value**: `your_groq_api_key_here`
 5. Click **Deploy**.
+
+deployed link = https://java-visualizer-amber.vercel.app/
