@@ -1,9 +1,10 @@
 // Groq Cloud API service for AI-powered code narration
-// Note: In production (Vercel), GROQ_API_KEY will be empty in the client bundle.
-// The request will be proxied via the Vercel Serverless Function (api/groq.js)
-// which securely attaches the server-side GROQ_API_KEY environment variable.
+// In production (Vercel), requests go to /api/groq which is a serverless proxy
+// that securely injects GROQ_API_KEY from server-side env vars.
+// In local dev, Vite's proxy rewrites /api/groq → https://api.groq.com using VITE_GROQ_API_KEY.
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
-const MODEL = 'llama-3.3-70b-versatile';
+// Use the 8B instant model — same quality for these tasks, 10x fewer rate limit issues
+const MODEL = 'llama-3.1-8b-instant';
 
 interface GroqMessage {
   role: 'system' | 'user' | 'assistant';
@@ -18,49 +19,69 @@ interface GroqResponse {
   }>;
 }
 
-async function callGroq(messages: GroqMessage[], maxTokens = 1024, temperature = 0.3, retries = 3): Promise<string> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const res = await fetch('/api/groq/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages,
-          max_tokens: maxTokens,
-          temperature,
-          stream: false
-        })
-      });
+// ─── Global request queue to prevent concurrent 429s ─────────────────────────
+// Groq free tier allows ~30 RPM. Serializing requests with a small gap prevents
+// bursting multiple requests simultaneously (which immediately 429s).
+let _queue = Promise.resolve();
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  const result: Promise<T> = _queue.then(() => fn());
+  // After each request (success or fail), wait before allowing the next
+  _queue = result.then(
+    () => new Promise<void>((res) => setTimeout(res, 2000)),
+    () => new Promise<void>((res) => setTimeout(res, 2000))
+  );
+  return result;
+}
 
-      if (res.status === 429 && i < retries - 1) {
-        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-        console.warn(`[Groq] Rate limited (429). Retrying in ${Math.round(delay)}ms...`);
+async function callGroq(messages: GroqMessage[], maxTokens = 1024, temperature = 0.3, retries = 4): Promise<string> {
+  return enqueue(async () => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const res = await fetch('/api/groq', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(GROQ_API_KEY ? { 'Authorization': `Bearer ${GROQ_API_KEY}` } : {})
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            messages,
+            max_tokens: maxTokens,
+            temperature,
+            stream: false
+          })
+        });
+
+        if (res.status === 429 && i < retries - 1) {
+          // Parse retry-after header if present
+          const retryAfter = res.headers.get('retry-after');
+          const delay = retryAfter
+            ? parseInt(retryAfter, 10) * 1000 + 500
+            : Math.pow(2, i + 1) * 2000 + Math.random() * 1000;
+          console.warn(`[Groq] Rate limited (429). Retrying in ${Math.round(delay / 1000)}s...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('[Groq API Error]', res.status, errorText);
+          throw new Error(`Groq API error: ${res.status}`);
+        }
+
+        const data: GroqResponse = await res.json();
+        return data.choices[0]?.message?.content || '';
+      } catch (err) {
+        if (i === retries - 1) {
+          console.error('[Groq Service Error]', err);
+          throw err;
+        }
+        const delay = Math.pow(2, i) * 1500 + Math.random() * 1000;
         await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
       }
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error('[Groq API Error]', res.status, errorText);
-        throw new Error(`Groq API error: ${res.status}`);
-      }
-
-      const data: GroqResponse = await res.json();
-      return data.choices[0]?.message?.content || '';
-    } catch (err) {
-      if (i === retries - 1) {
-        console.error('[Groq Service Error]', err);
-        throw err;
-      }
-      const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-      await new Promise(resolve => setTimeout(resolve, delay));
     }
-  }
-  return '';
+    return '';
+  });
 }
 
 // ─── Code Summary & Concept Tags ─────────────────────────────────────────────
