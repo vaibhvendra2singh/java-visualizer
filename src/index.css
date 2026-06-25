@@ -350,7 +350,7 @@ input[type="range"]::-moz-range-thumb {
   -webkit-text-fill-color: #09090b !important;
 }
 
-.light-mode header span {
+.light-mode header h1 span {
   background: #09090b !important;
   opacity: 0.25 !important;
   box-shadow: none !important;
