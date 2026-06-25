@@ -14,13 +14,22 @@ import type {
   WhileStatementNode,
   ForStatementNode,
   ReturnStatementNode,
+  BreakStatementNode,
+  ContinueStatementNode,
   BinaryExpressionNode,
   UnaryExpressionNode,
   PostfixExpressionNode,
   AssignmentStatementNode,
   BlockStatementNode,
   VariableDeclarationStatementNode,
-  IfStatementNode
+  IfStatementNode,
+  ForEachStatementNode,
+  DoWhileStatementNode,
+  SwitchStatementNode,
+  TernaryExpressionNode,
+  CastExpressionNode,
+  InstanceofExpressionNode,
+  ChangeHighlight
 } from './types';
 
 // Custom Runtime Error
@@ -313,12 +322,27 @@ class Interpreter {
       case 'WhileStatement':
         this.executeWhile(stmt);
         break;
+      case 'DoWhileStatement':
+        this.executeDoWhile(stmt as any);
+        break;
+      case 'ForEachStatement':
+        this.executeForEach(stmt as any);
+        break;
+      case 'SwitchStatement':
+        this.executeSwitch(stmt as any);
+        break;
       case 'ForStatement':
         this.executeFor(stmt);
         break;
       case 'ReturnStatement':
         this.executeReturn(stmt);
         break;
+      case 'BreakStatement':
+        this.addStep((stmt as BreakStatementNode).line, 'break — exit loop');
+        throw new BreakException((stmt as BreakStatementNode).line);
+      case 'ContinueStatement':
+        this.addStep((stmt as ContinueStatementNode).line, 'continue — next iteration');
+        throw new ContinueException((stmt as ContinueStatementNode).line);
       case 'ExpressionStatement':
         this.evaluateExpression(stmt.expression);
         break;
@@ -500,6 +524,19 @@ class Interpreter {
 
     const cur = current.value;
     const r = right.value;
+
+    if (typeof cur === 'boolean' && typeof r === 'boolean') {
+      let result = false;
+      switch (op) {
+        case '&=': result = cur && r; break;
+        case '|=': result = cur || r; break;
+        case '^=': result = (cur !== r); break;
+        default:
+          throw new JavaRuntimeError(`RuntimeError: Operator '${op}' cannot be applied to booleans.`, line);
+      }
+      return { type: 'primitive', value: result };
+    }
+
     if (typeof cur !== 'number' || typeof r !== 'number') {
       throw new JavaRuntimeError('RuntimeError: Arithmetic compound assignment requires numeric values.', line);
     }
@@ -516,6 +553,15 @@ class Interpreter {
           result = Math.trunc(result);
         }
         break;
+      case '%=': result = cur % r; break;
+      case '&=': result = cur & r; break;
+      case '|=': result = cur | r; break;
+      case '^=': result = cur ^ r; break;
+      case '<<=': result = cur << r; break;
+      case '>>=': result = cur >> r; break;
+      case '>>>=': result = cur >>> r; break;
+      default:
+        throw new JavaRuntimeError(`RuntimeError: Unsupported compound operator '${op}'`, line);
     }
     return { type: 'primitive', value: result };
   }
@@ -561,7 +607,13 @@ class Interpreter {
       }
 
       this.addStep(stmt.line, 'Loop condition is true -> run loop body');
-      this.executeStatement(stmt.body);
+      try {
+        this.executeStatement(stmt.body);
+      } catch (e) {
+        if (e instanceof BreakException) break;
+        if (e instanceof ContinueException) { iteration++; continue; }
+        throw e;
+      }
       iteration++;
     }
   }
@@ -598,7 +650,21 @@ class Interpreter {
       }
 
       // Execute body
-      this.executeStatement(stmt.body);
+      try {
+        this.executeStatement(stmt.body);
+      } catch (e) {
+        if (e instanceof BreakException) break;
+        if (e instanceof ContinueException) {
+          // still run the update before next condition check
+          if (stmt.update) {
+            this.addStep(stmt.update.line, 'Update loop var');
+            this.evaluateExpression(stmt.update);
+          }
+          iteration++;
+          continue;
+        }
+        throw e;
+      }
 
       // Execute update
       if (stmt.update) {
@@ -619,6 +685,138 @@ class Interpreter {
     // In our interpreter, we can throw a special "ReturnException" containing the return value,
     // which we catch in the method caller! This makes call execution return control immediately.
     throw new ReturnException(retVal, stmt.line);
+  }
+
+  private executeDoWhile(stmt: DoWhileStatementNode) {
+    let iteration = 1;
+    while (true) {
+      this.addStep(stmt.line, `Do-while iteration ${iteration} -> run loop body`);
+      try {
+        this.executeStatement(stmt.body);
+      } catch (e) {
+        if (e instanceof BreakException) break;
+        if (e instanceof ContinueException) {
+          // fall through to condition
+        } else {
+          throw e;
+        }
+      }
+
+      const condStr = this.stringifyExpression(stmt.condition);
+      const valStr = this.stringifyExpressionWithValues(stmt.condition);
+      const cond = this.evaluateExpression(stmt.condition);
+      if (cond.type !== 'primitive' || typeof cond.value !== 'boolean') {
+        throw new JavaRuntimeError('RuntimeError: Loop condition must evaluate to a boolean.', stmt.line);
+      }
+      const outcome = cond.value ? 'true' : 'false';
+      this.addStep(stmt.line, `Check loop condition: ${condStr} (${valStr}) -> ${outcome}`);
+
+      if (!cond.value) {
+        this.addStep(stmt.line, 'Loop condition is false -> exit loop');
+        break;
+      }
+      iteration++;
+    }
+  }
+
+  private executeSwitch(stmt: SwitchStatementNode) {
+    const val = this.evaluateExpression(stmt.expression);
+    const valPrimitive = val.type === 'primitive' ? val.value : null;
+
+    const exprStr = this.stringifyExpression(stmt.expression);
+    const displayVal = val.type === 'primitive' ? String(val.value) : `ref@${val.refId}`;
+    this.addStep(stmt.line, `Evaluate switch expression: ${exprStr} -> ${displayVal}`);
+
+    let matchIdx = -1;
+    let defaultIdx = -1;
+
+    for (let i = 0; i < stmt.cases.length; i++) {
+      const c = stmt.cases[i];
+      if (c.value === null) {
+        defaultIdx = i;
+      } else {
+        const caseVal = this.evaluateExpression(c.value);
+        if (caseVal.type === 'primitive' && caseVal.value === valPrimitive) {
+          matchIdx = i;
+          break;
+        }
+      }
+    }
+
+    const startIndex = matchIdx !== -1 ? matchIdx : defaultIdx;
+    if (startIndex === -1) {
+      this.addStep(stmt.line, 'No matching case found and no default case -> exit switch');
+      return;
+    }
+
+    const startCaseName = matchIdx !== -1 ? `case ${valPrimitive}` : 'default';
+    this.addStep(stmt.line, `Match found: entering ${startCaseName}`);
+
+    try {
+      for (let i = startIndex; i < stmt.cases.length; i++) {
+        for (const caseStmt of stmt.cases[i].statements) {
+          this.executeStatement(caseStmt);
+        }
+      }
+    } catch (e) {
+      if (e instanceof BreakException) {
+        this.addStep(e.line, 'break — exit switch');
+        return;
+      }
+      throw e;
+    }
+  }
+
+  private executeForEach(stmt: ForEachStatementNode) {
+    const iterableVal = this.evaluateExpression(stmt.iterable);
+    const frame = this.getActiveFrame();
+
+    if (iterableVal.type !== 'reference' || iterableVal.refId === null) {
+      throw new JavaRuntimeError('NullPointerException', stmt.line);
+    }
+
+    const heapObj = this.heap[iterableVal.refId];
+    if (!heapObj) {
+      throw new JavaRuntimeError('NullPointerException', stmt.line);
+    }
+
+    let elements: VariableValue[] = [];
+    let elemType: JavaType = stmt.variableType;
+
+    if (heapObj.type === 'array') {
+      elements = heapObj.values.map(v => v.value);
+      elemType = heapObj.elementType;
+    } else if (heapObj.type === 'list') {
+      elements = heapObj.elements;
+    } else if (heapObj.type === 'set') {
+      elements = heapObj.elements;
+    } else {
+      throw new JavaRuntimeError('RuntimeError: For-each loop target must be an array or Iterable.', stmt.line);
+    }
+
+    const iterStr = this.stringifyExpression(stmt.iterable);
+    this.addStep(stmt.line, `For-each loop over ${iterStr} (${elements.length} elements)`);
+
+    for (let i = 0; i < elements.length; i++) {
+      const elem = elements[i];
+      frame.variables[stmt.variableName] = {
+        name: stmt.variableName,
+        type: elemType,
+        value: elem
+      };
+
+      const displayVal = elem.type === 'primitive' ? String(elem.value) : `ref@${elem.refId}`;
+      const changeHighlight: ChangeHighlight = { type: 'stack', frameId: frame.id, varName: stmt.variableName };
+      this.addStep(stmt.line, `Iteration ${i + 1}: set ${stmt.variableName} = ${displayVal}`, changeHighlight);
+
+      try {
+        this.executeStatement(stmt.body);
+      } catch (e) {
+        if (e instanceof BreakException) break;
+        if (e instanceof ContinueException) continue;
+        throw e;
+      }
+    }
   }
 
   private isDoubleExpression(expr: ExpressionNode): boolean {
@@ -693,6 +891,12 @@ class Interpreter {
         }
         return { type: 'reference', refId: frame.thisRef };
       }
+      case 'TernaryExpression':
+        return this.evaluateTernary(expr as any);
+      case 'CastExpression':
+        return this.evaluateCast(expr as any);
+      case 'InstanceofExpression':
+        return this.evaluateInstanceof(expr as any);
       case 'AssignmentStatement':
         return this.evaluateAssignment(expr as any);
       default:
@@ -753,32 +957,98 @@ class Interpreter {
       case '>=': return { type: 'primitive', value: (l as any) >= (r as any) };
       case '&&': return { type: 'primitive', value: Boolean(l) && Boolean(r) };
       case '||': return { type: 'primitive', value: Boolean(l) || Boolean(r) };
+      case '&':
+        if (typeof l === 'boolean' && typeof r === 'boolean') return { type: 'primitive', value: l && r };
+        return { type: 'primitive', value: (l as any) & (r as any) };
+      case '|':
+        if (typeof l === 'boolean' && typeof r === 'boolean') return { type: 'primitive', value: l || r };
+        return { type: 'primitive', value: (l as any) | (r as any) };
+      case '^':
+        if (typeof l === 'boolean' && typeof r === 'boolean') return { type: 'primitive', value: l !== r };
+        return { type: 'primitive', value: (l as any) ^ (r as any) };
+      case '<<': return { type: 'primitive', value: (l as any) << (r as any) };
+      case '>>': return { type: 'primitive', value: (l as any) >> (r as any) };
+      case '>>>': return { type: 'primitive', value: (l as any) >>> (r as any) };
       default:
         throw new JavaRuntimeError(`Unsupported binary operator '${expr.operator}'`, expr.line);
     }
   }
 
+  private modifyTargetValue(target: ExpressionNode, diff: number, isPostfix: boolean, opText: string, line: number): VariableValue {
+    let curVal: VariableValue;
+    let type: JavaType = 'int';
+    let setter: (val: VariableValue) => ChangeHighlight;
+
+    if (target.type === 'Identifier') {
+      const curState = this.lookupVariable(target.name, line);
+      curVal = curState.value;
+      type = curState.type;
+      setter = (val) => this.setVariable(target.name, val, type, line);
+    } else if (target.type === 'ArrayAccessExpression') {
+      const arrVal = this.evaluateExpression(target.array);
+      if (arrVal.type !== 'reference' || arrVal.refId === null) {
+        throw new JavaRuntimeError('NullPointerException', line);
+      }
+      const heapObj = this.heap[arrVal.refId];
+      if (!heapObj || heapObj.type !== 'array') {
+        throw new JavaRuntimeError('RuntimeError: Target is not an array.', line);
+      }
+      const idxVal = this.evaluateExpression(target.index);
+      if (idxVal.type !== 'primitive' || typeof idxVal.value !== 'number') {
+        throw new JavaRuntimeError('RuntimeError: Array index must be numeric.', line);
+      }
+      const idx = idxVal.value;
+      if (idx < 0 || idx >= heapObj.values.length) {
+        throw new JavaRuntimeError(`ArrayIndexOutOfBoundsException: Index ${idx} out of bounds for length ${heapObj.values.length}`, line);
+      }
+      const elementState = heapObj.values[idx];
+      curVal = elementState.value;
+      type = elementState.type;
+      setter = (val) => {
+        elementState.value = val;
+        return { type: 'heap', refId: arrVal.refId!, field: idx };
+      };
+    } else if (target.type === 'FieldAccessExpression') {
+      const objVal = this.evaluateExpression(target.object);
+      if (objVal.type !== 'reference' || objVal.refId === null) {
+        throw new JavaRuntimeError('NullPointerException', line);
+      }
+      const heapObj = this.heap[objVal.refId];
+      if (!heapObj || heapObj.type !== 'object') {
+        throw new JavaRuntimeError('RuntimeError: Target is not an object.', line);
+      }
+      const fieldState = heapObj.fields[target.fieldName];
+      if (!fieldState) {
+        throw new JavaRuntimeError(`RuntimeError: Field '${target.fieldName}' not found.`, line);
+      }
+      curVal = fieldState.value;
+      type = fieldState.type;
+      setter = (val) => {
+        fieldState.value = val;
+        return { type: 'heap', refId: objVal.refId!, field: target.fieldName };
+      };
+    } else {
+      throw new JavaRuntimeError(`RuntimeError: Target of increment/decrement is not assignable.`, line);
+    }
+
+    if (curVal.type !== 'primitive' || typeof curVal.value !== 'number') {
+      throw new JavaRuntimeError('RuntimeError: Arithmetic operations apply to numeric types only.', line);
+    }
+
+    const oldVal = curVal.value;
+    const newVal = oldVal + diff;
+    const valState: VariableValue = { type: 'primitive', value: newVal };
+    const changeHighlight = setter(valState);
+
+    const explanation = `Set target = ${newVal} (via target ${opText} 1 = ${oldVal} ${opText} 1)`;
+    this.addStep(line, explanation, changeHighlight);
+
+    return isPostfix ? { type: 'primitive', value: oldVal } : valState;
+  }
+
   private evaluateUnary(expr: UnaryExpressionNode): VariableValue {
     if (expr.operator === '++' || expr.operator === '--') {
-      // Prefix increment / decrement
-      // Requires target variable
-      const target = expr.expression;
-      if (target.type !== 'Identifier') {
-        throw new JavaRuntimeError('RuntimeError: Prefix increment requires variable target.', expr.line);
-      }
-      const curState = this.lookupVariable(target.name, expr.line);
-      if (curState.value.type !== 'primitive' || typeof curState.value.value !== 'number') {
-        throw new JavaRuntimeError('RuntimeError: Arithmetic increment applies to numeric types only.', expr.line);
-      }
-      
-      const oldVal = curState.value.value;
-      const newVal = oldVal + (expr.operator === '++' ? 1 : -1);
-      const valState: VariableValue = { type: 'primitive', value: newVal };
-      const changeHighlight = this.setVariable(target.name, valState, curState.type, expr.line);
-      const opText = expr.operator === '++' ? '+' : '-';
-      const explanation = `Set ${target.name} = ${newVal} (via ${target.name} ${opText} 1 = ${oldVal} ${opText} 1)`;
-      this.addStep(expr.line, explanation, changeHighlight);
-      return valState;
+      return this.modifyTargetValue(expr.expression, expr.operator === '++' ? 1 : -1, false, expr.operator === '++' ? '+' : '-', expr.line);
     }
 
     const val = this.evaluateExpression(expr.expression);
@@ -792,28 +1062,83 @@ class Interpreter {
     if (expr.operator === '-') {
       return { type: 'primitive', value: -(val.value as any) };
     }
+    if (expr.operator === '~') {
+      return { type: 'primitive', value: ~(val.value as any) };
+    }
     throw new JavaRuntimeError(`RuntimeError: Unsupported unary operator '${expr.operator}'`, expr.line);
   }
 
   private evaluatePostfix(expr: PostfixExpressionNode): VariableValue {
-    const target = expr.expression;
-    if (target.type !== 'Identifier') {
-      throw new JavaRuntimeError('RuntimeError: Postfix increment requires variable target.', expr.line);
+    return this.modifyTargetValue(expr.expression, expr.operator === '++' ? 1 : -1, true, expr.operator === '++' ? '+' : '-', expr.line);
+  }
+
+  private evaluateTernary(expr: TernaryExpressionNode): VariableValue {
+    const cond = this.evaluateExpression(expr.condition);
+    if (cond.type !== 'primitive' || typeof cond.value !== 'boolean') {
+      throw new JavaRuntimeError('RuntimeError: Ternary condition must be a boolean.', expr.line);
     }
-    
-    const curState = this.lookupVariable(target.name, expr.line);
-    if (curState.value.type !== 'primitive' || typeof curState.value.value !== 'number') {
-      throw new JavaRuntimeError('RuntimeError: Arithmetic postfix applies to numeric types only.', expr.line);
+    const targetExpr = cond.value ? expr.thenExpr : expr.elseExpr;
+    const condStr = this.stringifyExpression(expr.condition);
+    const valStr = this.stringifyExpressionWithValues(expr.condition);
+    this.addStep(expr.line, `Evaluate ternary condition: ${condStr} (${valStr}) -> ${cond.value}`);
+    return this.evaluateExpression(targetExpr);
+  }
+
+  private evaluateCast(expr: CastExpressionNode): VariableValue {
+    const val = this.evaluateExpression(expr.expression);
+    if (val.type === 'primitive') {
+      const v = val.value;
+      if (v === null) return val;
+
+      if (expr.castType === 'int' || expr.castType === 'long' || expr.castType === 'short' || expr.castType === 'byte') {
+        if (typeof v === 'number') {
+          return { type: 'primitive', value: Math.trunc(v) };
+        } else if (typeof v === 'string' && v.length === 1) {
+          return { type: 'primitive', value: v.charCodeAt(0) };
+        } else if (typeof v === 'boolean') {
+          return { type: 'primitive', value: v ? 1 : 0 };
+        }
+      } else if (expr.castType === 'double' || expr.castType === 'float') {
+        if (typeof v === 'number') {
+          return { type: 'primitive', value: v };
+        } else if (typeof v === 'string' && v.length === 1) {
+          return { type: 'primitive', value: v.charCodeAt(0) };
+        } else if (typeof v === 'boolean') {
+          return { type: 'primitive', value: v ? 1.0 : 0.0 };
+        }
+      } else if (expr.castType === 'char') {
+        if (typeof v === 'number') {
+          return { type: 'primitive', value: String.fromCharCode(v) };
+        }
+      } else if (expr.castType === 'String') {
+        return { type: 'primitive', value: String(v) };
+      }
     }
-    
-    const oldVal = curState.value.value;
-    const newVal = oldVal + (expr.operator === '++' ? 1 : -1);
-    const valState: VariableValue = { type: 'primitive', value: newVal };
-    const changeHighlight = this.setVariable(target.name, valState, curState.type, expr.line);
-    const opText = expr.operator === '++' ? '+' : '-';
-    const explanation = `Set ${target.name} = ${newVal} (via ${target.name} ${opText} 1 = ${oldVal} ${opText} 1)`;
-    this.addStep(expr.line, explanation, changeHighlight);
-    return { type: 'primitive', value: oldVal };
+    return val;
+  }
+
+  private evaluateInstanceof(expr: InstanceofExpressionNode): VariableValue {
+    const val = this.evaluateExpression(expr.expression);
+    if (val.type !== 'reference' || val.refId === null) {
+      return { type: 'primitive', value: false };
+    }
+    const heapObj = this.heap[val.refId];
+    if (!heapObj) {
+      return { type: 'primitive', value: false };
+    }
+    let matched = false;
+    if (heapObj.type === 'object') {
+      matched = heapObj.className === expr.checkType;
+    } else if (heapObj.type === 'list') {
+      matched = expr.checkType === 'List' || expr.checkType === 'ArrayList' || expr.checkType === 'LinkedList' || expr.checkType === 'Stack' || expr.checkType === 'Queue' || expr.checkType === 'ArrayDeque' || heapObj.className === expr.checkType;
+    } else if (heapObj.type === 'map') {
+      matched = expr.checkType === 'Map' || expr.checkType === 'HashMap' || expr.checkType === 'LinkedHashMap' || heapObj.className === expr.checkType;
+    } else if (heapObj.type === 'set') {
+      matched = expr.checkType === 'Set' || expr.checkType === 'HashSet' || expr.checkType === 'LinkedHashSet' || heapObj.className === expr.checkType;
+    } else if (heapObj.type === 'array') {
+      matched = expr.checkType.endsWith('[]') && (expr.checkType.slice(0, -2) === heapObj.elementType || (expr.checkType === 'Object[]'));
+    }
+    return { type: 'primitive', value: matched };
   }
 
   private evaluateFieldAccess(expr: any): VariableValue {
@@ -834,6 +1159,11 @@ class Interpreter {
       if (className === 'Long') {
         if (field === 'MAX_VALUE') return { type: 'primitive', value: Number.MAX_SAFE_INTEGER };
         if (field === 'MIN_VALUE') return { type: 'primitive', value: Number.MIN_SAFE_INTEGER };
+      }
+      if (className === 'Math') {
+        if (field === 'PI') return { type: 'primitive', value: Math.PI };
+        if (field === 'E') return { type: 'primitive', value: Math.E };
+        if (field === 'TAU') return { type: 'primitive', value: Math.PI * 2 };
       }
     }
 
@@ -892,6 +1222,40 @@ class Interpreter {
   }
 
   private evaluateNewObject(expr: any): VariableValue {
+    const collectionLists = ['ArrayList', 'LinkedList', 'Stack', 'ArrayDeque', 'Queue'];
+    const collectionMaps = ['HashMap', 'LinkedHashMap'];
+    const collectionSets = ['HashSet', 'LinkedHashSet', 'TreeSet'];
+
+    if (collectionLists.includes(expr.className)) {
+      const refId = this.allocateHeap({
+        type: 'list',
+        className: expr.className,
+        elements: []
+      });
+      this.addStep(expr.line, `New collection ${expr.className} (ref@${refId})`);
+      return { type: 'reference', refId };
+    }
+
+    if (collectionMaps.includes(expr.className)) {
+      const refId = this.allocateHeap({
+        type: 'map',
+        className: expr.className,
+        entries: []
+      });
+      this.addStep(expr.line, `New collection ${expr.className} (ref@${refId})`);
+      return { type: 'reference', refId };
+    }
+
+    if (collectionSets.includes(expr.className)) {
+      const refId = this.allocateHeap({
+        type: 'set',
+        className: expr.className,
+        elements: []
+      });
+      this.addStep(expr.line, `New collection ${expr.className} (ref@${refId})`);
+      return { type: 'reference', refId };
+    }
+
     // 1. Locate class
     const cls = this.classes[expr.className];
     if (!cls) {
@@ -1039,6 +1403,277 @@ class Interpreter {
     return { type: 'reference', refId };
   }
 
+  private isLibraryStaticCall(expr: any): boolean {
+    if (expr.object && expr.object.type === 'Identifier') {
+      const name = expr.object.name;
+      return ['Integer', 'Character', 'Arrays', 'Collections', 'String', 'Math', 'System'].includes(name);
+    }
+    return false;
+  }
+
+  private evaluateLibraryStaticCall(expr: any): VariableValue {
+    const className = expr.object.name;
+    const methodName = expr.methodName;
+    const args = expr.arguments.map((arg: any) => this.evaluateExpression(arg));
+    const argValues = args.map((a: any) => a.type === 'primitive' ? a.value : null);
+
+    if (className === 'System' && methodName === 'exit') {
+      const exitCode = argValues[0] ?? 0;
+      this.addStep(expr.line, `System.exit(${exitCode}) called -> terminate program`);
+      throw new ExitException(exitCode, expr.line);
+    }
+
+    if (className === 'Integer') {
+      switch (methodName) {
+        case 'parseInt': {
+          const val = parseInt(String(argValues[0]), 10);
+          return { type: 'primitive', value: isNaN(val) ? 0 : val };
+        }
+        case 'toString': {
+          const radix = argValues[1] !== undefined ? Number(argValues[1]) : 10;
+          return { type: 'primitive', value: Number(argValues[0]).toString(radix) };
+        }
+        case 'valueOf': {
+          if (typeof argValues[0] === 'string') {
+            const val = parseInt(argValues[0], 10);
+            return { type: 'primitive', value: isNaN(val) ? 0 : val };
+          }
+          return { type: 'primitive', value: Number(argValues[0]) };
+        }
+        case 'toBinaryString':
+          return { type: 'primitive', value: Number(argValues[0]).toString(2) };
+        case 'toHexString':
+          return { type: 'primitive', value: Number(argValues[0]).toString(16) };
+      }
+    }
+
+    if (className === 'Character') {
+      const charStr = String(argValues[0] ?? '');
+      switch (methodName) {
+        case 'isLetter': return { type: 'primitive', value: /^[a-zA-Z]$/.test(charStr) };
+        case 'isDigit': return { type: 'primitive', value: /^\d$/.test(charStr) };
+        case 'isUpperCase': return { type: 'primitive', value: charStr === charStr.toUpperCase() && charStr !== charStr.toLowerCase() };
+        case 'isLowerCase': return { type: 'primitive', value: charStr === charStr.toLowerCase() && charStr !== charStr.toUpperCase() };
+        case 'isAlphabetic': return { type: 'primitive', value: /^[a-zA-Z]$/.test(charStr) };
+        case 'toLowerCase': return { type: 'primitive', value: charStr.toLowerCase() };
+        case 'toUpperCase': return { type: 'primitive', value: charStr.toUpperCase() };
+      }
+    }
+
+    if (className === 'Arrays') {
+      switch (methodName) {
+        case 'sort': {
+          const arrRef = args[0];
+          if (arrRef.type !== 'reference' || arrRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[arrRef.refId];
+          if (heapObj && heapObj.type === 'array') {
+            const fromIdx = argValues[1] !== undefined ? Number(argValues[1]) : 0;
+            const toIdx = argValues[2] !== undefined ? Number(argValues[2]) : heapObj.values.length;
+            const slice = heapObj.values.slice(fromIdx, toIdx);
+            slice.sort((a, b) => {
+              if (a.value.value === null) return 1;
+              if (b.value.value === null) return -1;
+              if (a.value.value < b.value.value) return -1;
+              if (a.value.value > b.value.value) return 1;
+              return 0;
+            });
+            heapObj.values.splice(fromIdx, slice.length, ...slice);
+            this.addStep(expr.line, `Arrays.sort(ref@${arrRef.refId}${argValues[1] !== undefined ? `, ${fromIdx}, ${toIdx}` : ''})`);
+            return { type: 'primitive', value: null };
+          }
+          break;
+        }
+        case 'fill': {
+          const arrRef = args[0];
+          if (arrRef.type !== 'reference' || arrRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[arrRef.refId];
+          if (heapObj && heapObj.type === 'array') {
+            const fillVal = args[1];
+            if (args.length === 2) {
+              for (const element of heapObj.values) {
+                element.value = fillVal;
+              }
+              this.addStep(expr.line, `Arrays.fill(ref@${arrRef.refId}, ${fillVal.value})`);
+            } else {
+              const fromIdx = Number(argValues[1]);
+              const toIdx = Number(argValues[2]);
+              const val = args[3];
+              for (let i = fromIdx; i < toIdx; i++) {
+                heapObj.values[i].value = val;
+              }
+              this.addStep(expr.line, `Arrays.fill(ref@${arrRef.refId}, ${fromIdx}, ${toIdx}, ${val.value})`);
+            }
+            return { type: 'primitive', value: null };
+          }
+          break;
+        }
+        case 'copyOf': {
+          const arrRef = args[0];
+          if (arrRef.type !== 'reference' || arrRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[arrRef.refId];
+          if (heapObj && heapObj.type === 'array') {
+            const newLength = Number(argValues[1]);
+            const newValues: VariableState[] = [];
+            for (let i = 0; i < newLength; i++) {
+              if (i < heapObj.values.length) {
+                newValues.push({ ...heapObj.values[i] });
+              } else {
+                newValues.push({
+                  name: `[${i}]`,
+                  type: heapObj.elementType,
+                  value: heapObj.elementType === 'int' || heapObj.elementType === 'double' ? { type: 'primitive', value: 0 } : (heapObj.elementType === 'boolean' ? { type: 'primitive', value: false } : { type: 'reference', refId: null })
+                });
+              }
+            }
+            const refId = this.allocateHeap({
+              type: 'array',
+              elementType: heapObj.elementType,
+              values: newValues
+            });
+            this.addStep(expr.line, `Arrays.copyOf(ref@${arrRef.refId}, ${newLength}) -> ref@${refId}`);
+            return { type: 'reference', refId };
+          }
+          break;
+        }
+        case 'copyOfRange': {
+          const arrRef = args[0];
+          if (arrRef.type !== 'reference' || arrRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[arrRef.refId];
+          if (heapObj && heapObj.type === 'array') {
+            const fromIdx = Number(argValues[1]);
+            const toIdx = Number(argValues[2]);
+            const newValues: VariableState[] = [];
+            for (let i = fromIdx; i < toIdx; i++) {
+              if (i < heapObj.values.length) {
+                newValues.push({ ...heapObj.values[i] });
+              } else {
+                newValues.push({
+                  name: `[${i - fromIdx}]`,
+                  type: heapObj.elementType,
+                  value: heapObj.elementType === 'int' || heapObj.elementType === 'double' ? { type: 'primitive', value: 0 } : (heapObj.elementType === 'boolean' ? { type: 'primitive', value: false } : { type: 'reference', refId: null })
+                });
+              }
+            }
+            const refId = this.allocateHeap({
+              type: 'array',
+              elementType: heapObj.elementType,
+              values: newValues
+            });
+            this.addStep(expr.line, `Arrays.copyOfRange(ref@${arrRef.refId}, ${fromIdx}, ${toIdx}) -> ref@${refId}`);
+            return { type: 'reference', refId };
+          }
+          break;
+        }
+        case 'toString': {
+          const arrRef = args[0];
+          if (arrRef.type !== 'reference' || arrRef.refId === null) return { type: 'primitive', value: 'null' };
+          const heapObj = this.heap[arrRef.refId];
+          if (heapObj && heapObj.type === 'array') {
+            const str = `[${heapObj.values.map(v => v.value.type === 'primitive' ? v.value.value : `ref@${v.value.refId}`).join(', ')}]`;
+            return { type: 'primitive', value: str };
+          }
+          break;
+        }
+      }
+    }
+
+    if (className === 'Collections') {
+      switch (methodName) {
+        case 'sort': {
+          const listRef = args[0];
+          if (listRef.type !== 'reference' || listRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[listRef.refId];
+          if (heapObj && heapObj.type === 'list') {
+            heapObj.elements.sort((a, b) => {
+              if (a.type === 'primitive' && b.type === 'primitive') {
+                if (a.value === null) return 1;
+                if (b.value === null) return -1;
+                if (a.value < b.value) return -1;
+                if (a.value > b.value) return 1;
+              }
+              return 0;
+            });
+            this.addStep(expr.line, `Collections.sort(ref@${listRef.refId})`);
+            return { type: 'primitive', value: null };
+          }
+          break;
+        }
+        case 'reverse': {
+          const listRef = args[0];
+          if (listRef.type !== 'reference' || listRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[listRef.refId];
+          if (heapObj && heapObj.type === 'list') {
+            heapObj.elements.reverse();
+            this.addStep(expr.line, `Collections.reverse(ref@${listRef.refId})`);
+            return { type: 'primitive', value: null };
+          }
+          break;
+        }
+        case 'min':
+        case 'max': {
+          const listRef = args[0];
+          if (listRef.type !== 'reference' || listRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[listRef.refId];
+          if (heapObj && heapObj.type === 'list') {
+            if (heapObj.elements.length === 0) throw new JavaRuntimeError('NoSuchElementException', expr.line);
+            const nums = heapObj.elements.map(e => e.type === 'primitive' && typeof e.value === 'number' ? e.value : 0);
+            const res = methodName === 'min' ? Math.min(...nums) : Math.max(...nums);
+            return { type: 'primitive', value: res };
+          }
+          break;
+        }
+        case 'shuffle': {
+          const listRef = args[0];
+          if (listRef.type !== 'reference' || listRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[listRef.refId];
+          if (heapObj && heapObj.type === 'list') {
+            for (let i = heapObj.elements.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [heapObj.elements[i], heapObj.elements[j]] = [heapObj.elements[j], heapObj.elements[i]];
+            }
+            this.addStep(expr.line, `Collections.shuffle(ref@${listRef.refId})`);
+            return { type: 'primitive', value: null };
+          }
+          break;
+        }
+        case 'frequency': {
+          const listRef = args[0];
+          const targetVal = args[1];
+          if (listRef.type !== 'reference' || listRef.refId === null) throw new JavaRuntimeError('NullPointerException', expr.line);
+          const heapObj = this.heap[listRef.refId];
+          if (heapObj && (heapObj.type === 'list' || heapObj.type === 'set')) {
+            let count = 0;
+            const elements = heapObj.elements;
+            for (const elem of elements) {
+              if (elem.type === targetVal.type && (elem.type === 'primitive' ? elem.value === targetVal.value : elem.refId === targetVal.refId)) {
+                count++;
+              }
+            }
+            return { type: 'primitive', value: count };
+          }
+          break;
+        }
+      }
+    }
+
+    if (className === 'String') {
+      if (methodName === 'valueOf') {
+        const v = argValues[0];
+        return { type: 'primitive', value: v === null ? 'null' : String(v) };
+      }
+      if (methodName === 'format') {
+        const formatStr = String(argValues[0]);
+        let formatted = formatStr;
+        for (let i = 1; i < argValues.length; i++) {
+          formatted = formatted.replace(/%[sddf]/, String(argValues[i]));
+        }
+        return { type: 'primitive', value: formatted };
+      }
+    }
+
+    throw new JavaRuntimeError(`NoSuchMethodException: Static method ${className}.${methodName} is not implemented.`, expr.line);
+  }
+
   private evaluateMethodCall(expr: any): VariableValue {
     // 1. Console print (System.out.print / println)
     const isStdout = this.isStdoutCall(expr);
@@ -1064,21 +1699,246 @@ class Interpreter {
       return { type: 'primitive', value: null };
     }
 
-    // 2. Built-in static Math methods
-    if (this.isMathCall(expr)) {
-      return this.evaluateMathCall(expr);
+    // 2. Built-in static library class methods
+    if (this.isLibraryStaticCall(expr)) {
+      if (expr.object.name === 'Math') {
+        return this.evaluateMathCall(expr);
+      }
+      return this.evaluateLibraryStaticCall(expr);
     }
 
-    // 3. General Method Call
+    // 3. String instance methods and simulated collections instance methods
+    if (expr.object) {
+      const objVal = this.evaluateExpression(expr.object);
+      
+      // String instance methods
+      if (objVal.type === 'primitive' && typeof objVal.value === 'string') {
+        const s = objVal.value;
+        const argsVal = expr.arguments.map((arg: any) => this.evaluateExpression(arg));
+        const argValues = argsVal.map((a: any) => a.type === 'primitive' ? a.value : null);
+        
+        switch (expr.methodName) {
+          case 'length': return { type: 'primitive', value: s.length };
+          case 'charAt': return { type: 'primitive', value: s.charAt(Number(argValues[0])) };
+          case 'substring':
+            return { type: 'primitive', value: s.substring(Number(argValues[0]), argValues[1] !== undefined ? Number(argValues[1]) : undefined) };
+          case 'equals': return { type: 'primitive', value: s === String(argValues[0]) };
+          case 'contains': return { type: 'primitive', value: s.includes(String(argValues[0])) };
+          case 'indexOf': return { type: 'primitive', value: s.indexOf(String(argValues[0]), argValues[1] !== undefined ? Number(argValues[1]) : undefined) };
+          case 'replace': return { type: 'primitive', value: s.replace(new RegExp(String(argValues[0]).replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), String(argValues[1])) };
+          case 'toUpperCase': return { type: 'primitive', value: s.toUpperCase() };
+          case 'toLowerCase': return { type: 'primitive', value: s.toLowerCase() };
+          case 'trim': return { type: 'primitive', value: s.trim() };
+          case 'isEmpty': return { type: 'primitive', value: s.length === 0 };
+          case 'startsWith': return { type: 'primitive', value: s.startsWith(String(argValues[0])) };
+          case 'endsWith': return { type: 'primitive', value: s.endsWith(String(argValues[0])) };
+          case 'compareTo': return { type: 'primitive', value: s.localeCompare(String(argValues[0])) };
+          case 'toCharArray': {
+            const charValues: VariableState[] = s.split('').map((c, i) => ({
+              name: `[${i}]`,
+              type: 'char',
+              value: { type: 'primitive', value: c }
+            }));
+            const refId = this.allocateHeap({
+              type: 'array',
+              elementType: 'char',
+              values: charValues
+            });
+            return { type: 'reference', refId };
+          }
+          case 'split': {
+            const parts = s.split(new RegExp(String(argValues[0])));
+            const stringValues: VariableState[] = parts.map((part, i) => ({
+              name: `[${i}]`,
+              type: 'String',
+              value: { type: 'primitive', value: part }
+            }));
+            const refId = this.allocateHeap({
+              type: 'array',
+              elementType: 'String',
+              values: stringValues
+            });
+            return { type: 'reference', refId };
+          }
+        }
+      }
+
+      // Simulated collections instance methods
+      if (objVal.type === 'reference' && objVal.refId !== null) {
+        const heapObj = this.heap[objVal.refId];
+        if (heapObj && ['list', 'map', 'set'].includes(heapObj.type)) {
+          const argsVal = expr.arguments.map((arg: any) => this.evaluateExpression(arg));
+          const argValues = argsVal.map((a: any) => a.type === 'primitive' ? a.value : null);
+
+          if (heapObj.type === 'list') {
+            switch (expr.methodName) {
+              case 'add': {
+                if (argsVal.length === 1) {
+                  heapObj.elements.push(argsVal[0]);
+                  this.addStep(expr.line, `list.add(${argsVal[0].type === 'primitive' ? argsVal[0].value : `ref@${argsVal[0].refId}`})`);
+                  return { type: 'primitive', value: true };
+                } else {
+                  const idx = Number(argValues[0]);
+                  heapObj.elements.splice(idx, 0, argsVal[1]);
+                  this.addStep(expr.line, `list.add(${idx}, ${argsVal[1].type === 'primitive' ? argsVal[1].value : `ref@${argsVal[1].refId}`})`);
+                  return { type: 'primitive', value: null };
+                }
+              }
+              case 'get': return heapObj.elements[Number(argValues[0])];
+              case 'set': {
+                const idx = Number(argValues[0]);
+                const old = heapObj.elements[idx];
+                heapObj.elements[idx] = argsVal[1];
+                this.addStep(expr.line, `list.set(${idx}, ${argsVal[1].type === 'primitive' ? argsVal[1].value : `ref@${argsVal[1].refId}`})`);
+                return old;
+              }
+              case 'size': return { type: 'primitive', value: heapObj.elements.length };
+              case 'remove': {
+                const arg = argsVal[0];
+                if (arg.type === 'primitive' && typeof arg.value === 'number') {
+                  const idx = arg.value;
+                  const removed = heapObj.elements.splice(idx, 1)[0];
+                  this.addStep(expr.line, `list.remove(${idx})`);
+                  return removed;
+                } else {
+                  const idx = heapObj.elements.findIndex(e => e.type === arg.type && (e.type === 'primitive' ? e.value === arg.value : e.refId === arg.refId));
+                  if (idx !== -1) {
+                    heapObj.elements.splice(idx, 1);
+                    this.addStep(expr.line, `list.remove(object) -> success`);
+                    return { type: 'primitive', value: true };
+                  }
+                  return { type: 'primitive', value: false };
+                }
+              }
+              case 'contains': {
+                const arg = argsVal[0];
+                const exists = heapObj.elements.some(e => e.type === arg.type && (e.type === 'primitive' ? e.value === arg.value : e.refId === arg.refId));
+                return { type: 'primitive', value: exists };
+              }
+              case 'isEmpty': return { type: 'primitive', value: heapObj.elements.length === 0 };
+              case 'clear':
+                heapObj.elements = [];
+                this.addStep(expr.line, `list.clear()`);
+                return { type: 'primitive', value: null };
+            }
+          }
+
+          if (heapObj.type === 'map') {
+            switch (expr.methodName) {
+              case 'put': {
+                const key = argsVal[0];
+                const val = argsVal[1];
+                const idx = heapObj.entries.findIndex(e => e.key.type === key.type && (e.key.type === 'primitive' ? e.key.value === key.value : e.key.refId === key.refId));
+                let old: VariableValue = { type: 'primitive', value: null };
+                if (idx !== -1) {
+                  old = heapObj.entries[idx].value;
+                  heapObj.entries[idx].value = val;
+                } else {
+                  heapObj.entries.push({ key, value: val });
+                }
+                this.addStep(expr.line, `map.put(${key.type === 'primitive' ? key.value : `ref@${key.refId}`}, ${val.type === 'primitive' ? val.value : `ref@${val.refId}`})`);
+                return old;
+              }
+              case 'get': {
+                const key = argsVal[0];
+                const entry = heapObj.entries.find(e => e.key.type === key.type && (e.key.type === 'primitive' ? e.key.value === key.value : e.key.refId === key.refId));
+                return entry ? entry.value : { type: 'primitive', value: null };
+              }
+              case 'containsKey': {
+                const key = argsVal[0];
+                const exists = heapObj.entries.some(e => e.key.type === key.type && (e.key.type === 'primitive' ? e.key.value === key.value : e.key.refId === key.refId));
+                return { type: 'primitive', value: exists };
+              }
+              case 'containsValue': {
+                const val = argsVal[0];
+                const exists = heapObj.entries.some(e => e.value.type === val.type && (e.value.type === 'primitive' ? e.value.value === val.value : e.value.refId === val.refId));
+                return { type: 'primitive', value: exists };
+              }
+              case 'remove': {
+                const key = argsVal[0];
+                const idx = heapObj.entries.findIndex(e => e.key.type === key.type && (e.key.type === 'primitive' ? e.key.value === key.value : e.key.refId === key.refId));
+                if (idx !== -1) {
+                  const old = heapObj.entries[idx].value;
+                  heapObj.entries.splice(idx, 1);
+                  this.addStep(expr.line, `map.remove(${key.type === 'primitive' ? key.value : `ref@${key.refId}`})`);
+                  return old;
+                }
+                return { type: 'primitive', value: null };
+              }
+              case 'size': return { type: 'primitive', value: heapObj.entries.length };
+              case 'isEmpty': return { type: 'primitive', value: heapObj.entries.length === 0 };
+              case 'clear':
+                heapObj.entries = [];
+                this.addStep(expr.line, `map.clear()`);
+                return { type: 'primitive', value: null };
+              case 'keySet': {
+                const keys = heapObj.entries.map(e => e.key);
+                const refId = this.allocateHeap({
+                  type: 'set',
+                  className: 'HashSet',
+                  elements: keys
+                });
+                return { type: 'reference', refId };
+              }
+              case 'values': {
+                const vals = heapObj.entries.map(e => e.value);
+                const refId = this.allocateHeap({
+                  type: 'list',
+                  className: 'ArrayList',
+                  elements: vals
+                });
+                return { type: 'reference', refId };
+              }
+            }
+          }
+
+          if (heapObj.type === 'set') {
+            switch (expr.methodName) {
+              case 'add': {
+                const val = argsVal[0];
+                const idx = heapObj.elements.findIndex(e => e.type === val.type && (e.type === 'primitive' ? e.value === val.value : e.refId === val.refId));
+                if (idx === -1) {
+                  heapObj.elements.push(val);
+                  this.addStep(expr.line, `set.add(${val.type === 'primitive' ? val.value : `ref@${val.refId}`})`);
+                  return { type: 'primitive', value: true };
+                }
+                return { type: 'primitive', value: false };
+              }
+              case 'contains': {
+                const val = argsVal[0];
+                const exists = heapObj.elements.some(e => e.type === val.type && (e.type === 'primitive' ? e.value === val.value : e.refId === val.refId));
+                return { type: 'primitive', value: exists };
+              }
+              case 'remove': {
+                const val = argsVal[0];
+                const idx = heapObj.elements.findIndex(e => e.type === val.type && (e.type === 'primitive' ? e.value === val.value : e.refId === val.refId));
+                if (idx !== -1) {
+                  heapObj.elements.splice(idx, 1);
+                  this.addStep(expr.line, `set.remove(${val.type === 'primitive' ? val.value : `ref@${val.refId}`})`);
+                  return { type: 'primitive', value: true };
+                }
+                return { type: 'primitive', value: false };
+              }
+              case 'size': return { type: 'primitive', value: heapObj.elements.length };
+              case 'isEmpty': return { type: 'primitive', value: heapObj.elements.length === 0 };
+              case 'clear':
+                heapObj.elements = [];
+                this.addStep(expr.line, `set.clear()`);
+                return { type: 'primitive', value: null };
+            }
+          }
+        }
+      }
+    }
+
+    // 4. General Method Call
     let targetRefId: number | null = null;
     let className = '';
 
     if (expr.object) {
-      // May be a static call on a user-defined class identifier
       if (expr.object.type === 'Identifier' && this.classes[expr.object.name]) {
         className = expr.object.name;
       } else {
-        // Instance method call
         const objRef = this.evaluateExpression(expr.object);
         if (objRef.type !== 'reference' || objRef.refId === null) {
           throw new JavaRuntimeError(`NullPointerException: Attempted to call method '${expr.methodName}' on a null reference.`, expr.line);
@@ -1091,7 +1951,6 @@ class Interpreter {
         className = heapObj.className;
       }
     } else {
-      // Local/Static method call on current class (or search class hierarchy)
       const frame = this.getActiveFrame();
       if (frame.thisRef !== null) {
         targetRefId = frame.thisRef;
@@ -1100,8 +1959,7 @@ class Interpreter {
           className = thisObj.className;
         }
       } else {
-        // Static context: extract className from methodName (e.g. "Main.foo" or infer from current frame)
-        const activeMethod = frame.methodName; // e.g. "Main.main"
+        const activeMethod = frame.methodName;
         className = activeMethod.split('.')[0];
       }
     }
@@ -1293,13 +2151,40 @@ class Interpreter {
 
   private getOperatorPrecedence(op: string): number {
     switch (op) {
-      case '||': return 1;
-      case '&&': return 2;
-      case '==': case '!=': return 3;
-      case '<': case '<=': case '>': case '>=': return 4;
-      case '+': case '-': return 5;
-      case '*': case '/': case '%': return 6;
-      default: return 0;
+      case '?':
+        return 1;
+      case '||':
+        return 2;
+      case '&&':
+        return 3;
+      case '==':
+      case '!=':
+        return 4;
+      case '<':
+      case '<=':
+      case '>':
+      case '>=':
+      case 'instanceof':
+        return 5;
+      case '|':
+        return 6;
+      case '^':
+        return 7;
+      case '&':
+        return 8;
+      case '<<':
+      case '>>':
+      case '>>>':
+        return 9;
+      case '+':
+      case '-':
+        return 10;
+      case '*':
+      case '/':
+      case '%':
+        return 11;
+      default:
+        return 0;
     }
   }
 
@@ -1320,6 +2205,27 @@ class ReturnException {
   line: number;
   constructor(value: VariableValue, line: number) {
     this.value = value;
+    this.line = line;
+  }
+}
+
+// Thrown when a `break` statement is hit inside a loop
+class BreakException {
+  line: number;
+  constructor(line: number) { this.line = line; }
+}
+
+// Thrown when a `continue` statement is hit inside a loop
+class ContinueException {
+  line: number;
+  constructor(line: number) { this.line = line; }
+}
+
+class ExitException {
+  code: number;
+  line: number;
+  constructor(code: number, line: number) {
+    this.code = code;
     this.line = line;
   }
 }
@@ -1353,6 +2259,13 @@ export function generateTrace(code: string, inputText = ''): TraceResult {
       const trace = interpreter.run();
       return { trace, error: null, errorType: null };
     } catch (e: any) {
+      if (e instanceof ExitException) {
+        return {
+          trace: interpreter.getTrace(),
+          error: e.code === 0 ? null : `Program exited with code ${e.code}`,
+          errorType: e.code === 0 ? null : 'runtime'
+        };
+      }
       const errMsg = e instanceof Error ? e.message : String(e);
       return {
         trace: interpreter.getTrace(),

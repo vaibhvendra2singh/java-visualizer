@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { PlaybackProvider, usePlayback } from './state/PlaybackContext';
 import { AIProvider } from './state/AIContext';
+import { runInterpreterTests } from './interpreter/runTests';
 import { CodeEditor } from './components/CodeEditor';
 import { ExecutionVisualizer } from './components/ExecutionVisualizer';
 import { CallStackView } from './components/CallStackView';
@@ -16,6 +17,14 @@ const AppContent: React.FC = () => {
   const { theme, toggleTheme } = usePlayback();
   const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = React.useState(false);
+  const [showDiagnostics, setShowDiagnostics] = React.useState(false);
+  const [diagnosticResults, setDiagnosticResults] = React.useState<any[]>([]);
+
+  // Run interpreter compatibility tests on mount
+  useEffect(() => {
+    const res = runInterpreterTests();
+    setDiagnosticResults(res);
+  }, []);
 
   // Apply light-mode class to HTML root element
   useEffect(() => {
@@ -92,6 +101,14 @@ const AppContent: React.FC = () => {
             </button>
           )}
           <button
+            onClick={() => setShowDiagnostics(true)}
+            title="Run Diagnostics & Verify Java 17 Compatibility"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs font-semibold text-zinc-400 hover:text-white hover:border-zinc-700 transition-all duration-200 cursor-pointer"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Diagnostics</span>
+          </button>
+          <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             className="p-2 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all duration-200 cursor-pointer"
@@ -124,7 +141,7 @@ const AppContent: React.FC = () => {
             <SvgArrows />
 
             {/* Top Row: Call Stack & Variable Watch (side-by-side) */}
-            <div className="h-[50%] w-full flex flex-row gap-4 overflow-hidden">
+            <div className="h-[38%] w-full flex flex-row gap-4 overflow-hidden">
               <div className="flex-[65] h-full overflow-hidden">
                 <CallStackView />
               </div>
@@ -134,7 +151,7 @@ const AppContent: React.FC = () => {
             </div>
 
             {/* Bottom Row: Heap Space (full width) */}
-            <div className="h-[50%] w-full overflow-hidden">
+            <div className="h-[62%] w-full overflow-hidden">
               <HeapView />
             </div>
           </div>
@@ -153,6 +170,60 @@ const AppContent: React.FC = () => {
 
       {/* Floating agency-aesthetic glass chips & modules */}
       <FloatingModules />
+
+      {/* Diagnostics Overlay Modal */}
+      {showDiagnostics && (
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-md z-[9999] flex items-center justify-center p-6 transition-all duration-300">
+          <div className="w-full max-w-2xl bg-zinc-950/90 border border-white/10 rounded-2xl p-6 flex flex-col max-h-[85vh] shadow-[0_0_50px_rgba(0,0,0,0.85)] relative">
+            <div className="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-white/5">
+              <div>
+                <h3 className="text-xs font-bold text-white font-mono tracking-widest uppercase">System Diagnostics</h3>
+                <p className="text-[9px] text-zinc-500 font-mono mt-1">Java 17 Compatibility Verification Suite</p>
+              </div>
+              <button 
+                onClick={() => setShowDiagnostics(false)}
+                className="text-zinc-400 hover:text-white text-[10px] font-mono uppercase tracking-widest cursor-pointer bg-zinc-900/80 px-3 py-1.5 rounded-lg border border-zinc-800 hover:border-zinc-700 transition-all"
+              >
+                Close
+              </button>
+            </div>
+            
+            {/* Scrollable list */}
+            <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-3 pr-1 scrollbar-thin">
+              {diagnosticResults.map((r, idx) => (
+                <div key={idx} className="bg-zinc-900/30 border border-white/5 rounded-xl p-4 flex flex-col gap-2 transition-all hover:border-white/10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-zinc-200 font-mono">{r.name}</span>
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold font-mono tracking-widest uppercase ${r.passed ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                      {r.passed ? 'PASSED' : 'FAILED'}
+                    </span>
+                  </div>
+                  {r.error && (
+                    <div className="text-[9px] font-mono text-rose-400 bg-rose-500/5 p-2 rounded border border-rose-500/10">
+                      Error: {r.error}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-1 text-[9px] font-mono text-zinc-500 bg-zinc-950/40 p-2.5 rounded border border-white/5">
+                    <div><span className="text-zinc-600">Expected:</span> {r.expected}</div>
+                    <div><span className="text-zinc-600">Actual:</span> {r.actual}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer Summary */}
+            <div className="pt-4 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
+              <span className="text-zinc-400">Status: {diagnosticResults.every(r => r.passed) ? 'All systems nominal' : 'Compatibility gap detected'}</span>
+              <span className="text-emerald-400 font-bold">
+                {diagnosticResults.filter(r => r.passed).length} / {diagnosticResults.length} Tests Passed
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

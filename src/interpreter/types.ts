@@ -1,4 +1,5 @@
-export type JavaType = 'int' | 'double' | 'boolean' | 'char' | 'String' | 'reference' | 'void';
+export type JavaType = 'int' | 'double' | 'boolean' | 'char' | 'String' | 'reference' | 'void'
+  | 'long' | 'float' | 'short' | 'byte';
 
 export type VariableValue =
   | { type: 'primitive'; value: number | boolean | string | null }
@@ -27,6 +28,24 @@ export type HeapObject =
       type: 'array';
       elementType: JavaType;
       values: VariableState[];
+    }
+  | {
+      // Dynamic list (ArrayList, LinkedList, Stack, ArrayDeque, etc.)
+      type: 'list';
+      className: string;
+      elements: VariableValue[];
+    }
+  | {
+      // HashMap / LinkedHashMap
+      type: 'map';
+      className: string;
+      entries: Array<{ key: VariableValue; value: VariableValue }>;
+    }
+  | {
+      // HashSet / LinkedHashSet / TreeSet
+      type: 'set';
+      className: string;
+      elements: VariableValue[];
     };
 
 export interface ChangeHighlight {
@@ -111,7 +130,12 @@ export type StatementNode =
   | IfStatementNode
   | WhileStatementNode
   | ForStatementNode
+  | ForEachStatementNode
+  | DoWhileStatementNode
+  | SwitchStatementNode
   | ReturnStatementNode
+  | BreakStatementNode
+  | ContinueStatementNode
   | ExpressionStatementNode;
 
 export interface BlockStatementNode extends ASTBase {
@@ -130,7 +154,7 @@ export interface VariableDeclarationStatementNode extends ASTBase {
 export interface AssignmentStatementNode extends ASTBase {
   type: 'AssignmentStatement';
   target: ExpressionNode; // IdentifierNode, FieldAccessNode, or ArrayAccessNode
-  operator: '=' | '+=' | '-=' | '*=' | '/=';
+  operator: '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>=' | '>>>=';
   value: ExpressionNode;
 }
 
@@ -147,17 +171,51 @@ export interface WhileStatementNode extends ASTBase {
   body: StatementNode;
 }
 
+export interface DoWhileStatementNode extends ASTBase {
+  type: 'DoWhileStatement';
+  condition: ExpressionNode;
+  body: StatementNode;
+}
+
 export interface ForStatementNode extends ASTBase {
   type: 'ForStatement';
   initializer: VariableDeclarationStatementNode | AssignmentStatementNode | null;
   condition: ExpressionNode | null;
-  update: ExpressionNode | null; // e.g. PostfixExpressionNode
+  update: ExpressionNode | null;
   body: StatementNode;
+}
+
+export interface ForEachStatementNode extends ASTBase {
+  type: 'ForEachStatement';
+  variableType: JavaType;
+  variableName: string;
+  iterable: ExpressionNode;
+  body: StatementNode;
+}
+
+export interface SwitchCaseNode {
+  /** null = default case */
+  value: ExpressionNode | null;
+  statements: StatementNode[];
+}
+
+export interface SwitchStatementNode extends ASTBase {
+  type: 'SwitchStatement';
+  expression: ExpressionNode;
+  cases: SwitchCaseNode[];
 }
 
 export interface ReturnStatementNode extends ASTBase {
   type: 'ReturnStatement';
   expression?: ExpressionNode;
+}
+
+export interface BreakStatementNode extends ASTBase {
+  type: 'BreakStatement';
+}
+
+export interface ContinueStatementNode extends ASTBase {
+  type: 'ContinueStatement';
 }
 
 export interface ExpressionStatementNode extends ASTBase {
@@ -171,12 +229,16 @@ export type ExpressionNode =
   | BinaryExpressionNode
   | UnaryExpressionNode
   | PostfixExpressionNode
+  | TernaryExpressionNode
+  | CastExpressionNode
+  | InstanceofExpressionNode
   | MethodCallExpressionNode
   | NewObjectExpressionNode
   | NewArrayExpressionNode
   | FieldAccessExpressionNode
   | ArrayAccessExpressionNode
-  | ThisExpressionNode;
+  | ThisExpressionNode
+  | AssignmentStatementNode;  // assignments used as expressions
 
 export interface LiteralNode extends ASTBase {
   type: 'Literal';
@@ -191,14 +253,15 @@ export interface IdentifierNode extends ASTBase {
 
 export interface BinaryExpressionNode extends ASTBase {
   type: 'BinaryExpression';
-  operator: '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '&&' | '||';
+  operator: '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<' | '<=' | '>' | '>='
+    | '&&' | '||' | '&' | '|' | '^' | '<<' | '>>' | '>>>';
   left: ExpressionNode;
   right: ExpressionNode;
 }
 
 export interface UnaryExpressionNode extends ASTBase {
   type: 'UnaryExpression';
-  operator: '-' | '!' | '++' | '--'; // prefix ++/--
+  operator: '-' | '!' | '~' | '++' | '--'; // prefix ++/--
   expression: ExpressionNode;
 }
 
@@ -206,6 +269,25 @@ export interface PostfixExpressionNode extends ASTBase {
   type: 'PostfixExpression';
   operator: '++' | '--';
   expression: ExpressionNode;
+}
+
+export interface TernaryExpressionNode extends ASTBase {
+  type: 'TernaryExpression';
+  condition: ExpressionNode;
+  thenExpr: ExpressionNode;
+  elseExpr: ExpressionNode;
+}
+
+export interface CastExpressionNode extends ASTBase {
+  type: 'CastExpression';
+  castType: JavaType;
+  expression: ExpressionNode;
+}
+
+export interface InstanceofExpressionNode extends ASTBase {
+  type: 'InstanceofExpression';
+  expression: ExpressionNode;
+  checkType: string;
 }
 
 export interface MethodCallExpressionNode extends ASTBase {

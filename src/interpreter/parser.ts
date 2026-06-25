@@ -13,11 +13,18 @@ import type {
   IfStatementNode,
   WhileStatementNode,
   ForStatementNode,
+  ForEachStatementNode,
+  DoWhileStatementNode,
+  SwitchStatementNode,
+  SwitchCaseNode,
   ReturnStatementNode,
   ExpressionStatementNode,
   ExpressionNode,
   MethodCallExpressionNode,
-  FieldAccessExpressionNode
+  FieldAccessExpressionNode,
+  TernaryExpressionNode,
+  CastExpressionNode,
+  InstanceofExpressionNode
 } from './types';
 
 export type TokenType =
@@ -60,7 +67,8 @@ export class Tokenizer {
   private keywords = new Set([
     'class', 'public', 'private', 'static', 'void', 'int', 'double',
     'boolean', 'char', 'String', 'if', 'else', 'for', 'while', 'new',
-    'return', 'this'
+    'return', 'this', 'break', 'continue', 'import',
+    'long', 'float', 'short', 'byte', 'var', 'do', 'switch', 'case', 'default', 'instanceof'
   ]);
 
   constructor(code: string) {
@@ -152,11 +160,26 @@ export class Tokenizer {
       const currentCol = this.col;
 
       // Multi-character operators
-      const nextChar = this.code[this.pos + 1] || '';
-      const twoChars = char + nextChar;
+      const next1 = this.code[this.pos + 1] || '';
+      const next2 = this.code[this.pos + 2] || '';
+      const next3 = this.code[this.pos + 3] || '';
+      const fourChars = char + next1 + next2 + next3;
+      const threeChars = char + next1 + next2;
+      const twoChars = char + next1;
+
+      if (fourChars === '>>>=') {
+        this.consume(); this.consume(); this.consume(); this.consume();
+        tokens.push({ type: 'Operator', value: '>>>=', line: currentLine, col: currentCol });
+        continue;
+      }
+      if (['>>>', '>>=', '<<='].includes(threeChars)) {
+        this.consume(); this.consume(); this.consume();
+        tokens.push({ type: 'Operator', value: threeChars, line: currentLine, col: currentCol });
+        continue;
+      }
 
       // Check operators
-      const ops2 = ['==', '!=', '<=', '>=', '&&', '||', '++', '--', '+=', '-=', '*=', '/='];
+      const ops2 = ['==', '!=', '<=', '>=', '&&', '||', '++', '--', '+=', '-=', '*=', '/=', '&=', '|=', '^=', '<<', '>>'];
       if (ops2.includes(twoChars)) {
         this.consume();
         this.consume();
@@ -164,7 +187,7 @@ export class Tokenizer {
         continue;
       }
 
-      const ops1 = ['+', '-', '*', '/', '%', '=', '<', '>', '!'];
+      const ops1 = ['+', '-', '*', '/', '%', '=', '<', '>', '!', '&', '|', '^', '~', '?', ':'];
       if (ops1.includes(char)) {
         this.consume();
         tokens.push({ type: 'Operator', value: char, line: currentLine, col: currentCol });
@@ -190,6 +213,32 @@ export class Tokenizer {
     const startLine = this.line;
     const startCol = this.col;
     let value = '';
+    
+    // Hex/Binary literals
+    if (this.peek() === '0') {
+      value += this.consume();
+      const next = this.peek();
+      if (next === 'x' || next === 'X') {
+        value += this.consume(); // x
+        while (/[0-9a-fA-F]/.test(this.peek())) {
+          value += this.consume();
+        }
+        if (['L', 'l'].includes(this.peek())) {
+          value += this.consume();
+        }
+        return { type: 'Number', value, line: startLine, col: startCol };
+      } else if (next === 'b' || next === 'B') {
+        value += this.consume(); // b
+        while (/[01]/.test(this.peek())) {
+          value += this.consume();
+        }
+        if (['L', 'l'].includes(this.peek())) {
+          value += this.consume();
+        }
+        return { type: 'Number', value, line: startLine, col: startCol };
+      }
+    }
+
     while (/\d/.test(this.peek())) {
       value += this.consume();
     }
@@ -198,6 +247,10 @@ export class Tokenizer {
       while (/\d/.test(this.peek())) {
         value += this.consume();
       }
+    }
+    const nextChar = this.peek();
+    if (['L', 'l', 'F', 'f', 'D', 'd'].includes(nextChar)) {
+      value += this.consume();
     }
     return { type: 'Number', value, line: startLine, col: startCol };
   }
@@ -310,6 +363,14 @@ export class Parser {
     const classes: ClassDeclarationNode[] = [];
     const firstToken = this.peek();
     while (!this.check('EOF')) {
+      // Skip import statements: import java.util.*;
+      if (this.check('Keyword', 'import')) {
+        while (!this.check('Punctuation', ';') && !this.check('EOF')) {
+          this.pos++;
+        }
+        if (this.check('Punctuation', ';')) this.pos++; // consume ';'
+        continue;
+      }
       classes.push(this.parseClassDeclaration());
     }
     return {
@@ -379,20 +440,51 @@ export class Parser {
     };
   }
 
+  private skipGenerics(): void {
+    if (this.check('Operator', '<')) {
+      this.consume('Operator', '<');
+      let depth = 1;
+      while (depth > 0 && !this.check('EOF')) {
+        const tok = this.peek();
+        if (tok.type === 'Operator' && tok.value === '<') {
+          depth++;
+          this.consume();
+        } else if (tok.type === 'Operator' && tok.value === '>') {
+          depth--;
+          this.consume();
+        } else if (tok.type === 'Operator' && tok.value === '>>') {
+          depth -= 2;
+          this.consume();
+        } else if (tok.type === 'Operator' && tok.value === '>>>') {
+          depth -= 3;
+          this.consume();
+        } else {
+          this.consume();
+        }
+      }
+    }
+  }
+
   private parseType(): JavaType {
     const token = this.peek();
+    let typeVal: JavaType;
     if (token.type === 'Keyword') {
-      const types = ['int', 'double', 'boolean', 'char', 'String', 'void'];
+      const types = ['int', 'double', 'boolean', 'char', 'String', 'void', 'long', 'float', 'short', 'byte', 'var'];
       if (types.includes(token.value)) {
         this.consume();
-        return token.value as JavaType;
+        typeVal = token.value as JavaType;
+      } else {
+        throw new JavaSyntaxError(`Expected valid Java type, got '${token.value}'`, token.line, token.col);
       }
     } else if (token.type === 'Identifier') {
       // Class type references are represented as reference types
       this.consume();
-      return 'reference';
+      typeVal = 'reference';
+    } else {
+      throw new JavaSyntaxError(`Expected valid Java type, got '${token.value}'`, token.line, token.col);
     }
-    throw new JavaSyntaxError(`Expected valid Java type, got '${token.value}'`, token.line, token.col);
+    this.skipGenerics();
+    return typeVal;
   }
 
   private parseConstructorDeclaration(className: string): ConstructorDeclarationNode {
@@ -494,12 +586,32 @@ export class Parser {
       return this.parseWhileStatement();
     }
 
+    if (this.check('Keyword', 'do')) {
+      return this.parseDoWhileStatement();
+    }
+
     if (this.check('Keyword', 'for')) {
       return this.parseForStatement();
     }
 
+    if (this.check('Keyword', 'switch')) {
+      return this.parseSwitchStatement();
+    }
+
     if (this.check('Keyword', 'return')) {
       return this.parseReturnStatement();
+    }
+
+    if (this.check('Keyword', 'break')) {
+      const tok = this.consume('Keyword', 'break');
+      this.match('Punctuation', ';');
+      return { type: 'BreakStatement', line: tok.line };
+    }
+
+    if (this.check('Keyword', 'continue')) {
+      const tok = this.consume('Keyword', 'continue');
+      this.match('Punctuation', ';');
+      return { type: 'ContinueStatement', line: tok.line };
     }
 
     // It could be variable declaration or expression statement
@@ -515,13 +627,17 @@ export class Parser {
 
   private checkTypeWord(token: Token): boolean {
     if (token.type === 'Keyword') {
-      return ['int', 'double', 'boolean', 'char', 'String'].includes(token.value);
+      return ['int', 'double', 'boolean', 'char', 'String', 'long', 'float', 'short', 'byte', 'var'].includes(token.value);
     }
     if (token.type === 'Identifier') {
       // A class name followed by another identifier or array brackets indicates a var declaration.
       // E.g. "Point p" or "Point[] arr"
       const next1 = this.peekNext();
       if (next1.type === 'Identifier') return true;
+      if (next1.type === 'Operator' && next1.value === '<') {
+        // Generics E.g. "List<Integer> list"
+        return true;
+      }
       if (next1.type === 'Punctuation' && next1.value === '[') {
         const next2 = this.tokens[this.pos + 2];
         if (next2 && next2.type === 'Punctuation' && next2.value === ']') {
@@ -535,7 +651,7 @@ export class Parser {
     return false;
   }
 
-  private parseVariableDeclarationStatement(): VariableDeclarationStatementNode {
+  private parseVariableDeclarationStatement(): VariableDeclarationStatementNode | BlockStatementNode {
     const startToken = this.peek();
     const dataType = this.parseType();
     let isArray = false;
@@ -543,18 +659,32 @@ export class Parser {
       this.consume('Punctuation', ']');
       isArray = true;
     }
-    const name = this.consume('Identifier').value;
-    let initializer: ExpressionNode | undefined;
-    if (this.match('Operator', '=')) {
-      initializer = this.parseExpression();
-    }
+    
+    const declarations: VariableDeclarationStatementNode[] = [];
+    do {
+      const name = this.consume('Identifier').value;
+      let initializer: ExpressionNode | undefined;
+      if (this.match('Operator', '=')) {
+        initializer = this.parseExpression();
+      }
+      declarations.push({
+        type: 'VariableDeclarationStatement',
+        dataType: isArray ? 'reference' : dataType,
+        isArray,
+        name,
+        initializer,
+        line: startToken.line
+      });
+    } while (this.match('Punctuation', ','));
+    
     this.consume('Punctuation', ';');
+    
+    if (declarations.length === 1) {
+      return declarations[0];
+    }
     return {
-      type: 'VariableDeclarationStatement',
-      dataType: isArray ? 'reference' : dataType,
-      isArray,
-      name,
-      initializer,
+      type: 'BlockStatement',
+      statements: declarations,
       line: startToken.line
     };
   }
@@ -592,9 +722,114 @@ export class Parser {
     };
   }
 
-  private parseForStatement(): ForStatementNode {
+  private isForEachLoop(): boolean {
+    let index = this.pos;
+    let parenDepth = 0;
+    let bracketDepth = 0;
+    while (index < this.tokens.length) {
+      const token = this.tokens[index];
+      if (token.value === ';') return false; // Semicolon first means standard for-loop
+      if (token.value === ')') return false; // Closing parenthesis first
+      if (token.value === '(') parenDepth++;
+      if (token.value === ')') parenDepth--;
+      if (token.value === '[') bracketDepth++;
+      if (token.value === ']') bracketDepth--;
+
+      if (parenDepth === 0 && bracketDepth === 0) {
+        if (token.type === 'Operator' && token.value === ':') {
+          return true;
+        }
+      }
+      index++;
+    }
+    return false;
+  }
+
+  private parseForEachStatement(startToken: Token): ForEachStatementNode {
+    const variableType = this.parseType();
+    let isArray = false;
+    if (this.match('Punctuation', '[')) {
+      this.consume('Punctuation', ']');
+      isArray = true;
+    }
+    const variableName = this.consume('Identifier').value;
+    this.consume('Operator', ':');
+    const iterable = this.parseExpression();
+    this.consume('Punctuation', ')');
+    const body = this.parseStatement();
+
+    return {
+      type: 'ForEachStatement',
+      variableType: isArray ? 'reference' : variableType,
+      variableName,
+      iterable,
+      body,
+      line: startToken.line
+    };
+  }
+
+  private parseDoWhileStatement(): DoWhileStatementNode {
+    const startToken = this.consume('Keyword', 'do');
+    const body = this.parseStatement();
+    this.consume('Keyword', 'while');
+    this.consume('Punctuation', '(');
+    const condition = this.parseExpression();
+    this.consume('Punctuation', ')');
+    this.match('Punctuation', ';'); // optional semicolon E.g. do {} while(c);
+    return {
+      type: 'DoWhileStatement',
+      condition,
+      body,
+      line: startToken.line
+    };
+  }
+
+  private parseSwitchStatement(): SwitchStatementNode {
+    const startToken = this.consume('Keyword', 'switch');
+    this.consume('Punctuation', '(');
+    const expression = this.parseExpression();
+    this.consume('Punctuation', ')');
+    this.consume('Punctuation', '{');
+
+    const cases: SwitchCaseNode[] = [];
+    while (!this.check('Punctuation', '}')) {
+      const caseToken = this.peek();
+      if (this.match('Keyword', 'case')) {
+        const val = this.parseExpression();
+        this.consume('Operator', ':');
+        const statements: StatementNode[] = [];
+        while (!this.check('Keyword', 'case') && !this.check('Keyword', 'default') && !this.check('Punctuation', '}')) {
+          statements.push(this.parseStatement());
+        }
+        cases.push({ value: val, statements });
+      } else if (this.match('Keyword', 'default')) {
+        this.consume('Operator', ':');
+        const statements: StatementNode[] = [];
+        while (!this.check('Keyword', 'case') && !this.check('Keyword', 'default') && !this.check('Punctuation', '}')) {
+          statements.push(this.parseStatement());
+        }
+        cases.push({ value: null, statements });
+      } else {
+        throw new JavaSyntaxError(`Expected 'case' or 'default', got '${caseToken.value}'`, caseToken.line, caseToken.col);
+      }
+    }
+    this.consume('Punctuation', '}');
+
+    return {
+      type: 'SwitchStatement',
+      expression,
+      cases,
+      line: startToken.line
+    };
+  }
+
+  private parseForStatement(): ForStatementNode | ForEachStatementNode {
     const startToken = this.consume('Keyword', 'for');
     this.consume('Punctuation', '(');
+
+    if (this.isForEachLoop()) {
+      return this.parseForEachStatement(startToken);
+    }
 
     let initializer: VariableDeclarationStatementNode | AssignmentStatementNode | null = null;
     if (!this.check('Punctuation', ';')) {
@@ -697,7 +932,7 @@ export class Parser {
       if (token.value === ']') bracketDepth--;
 
       if (parenDepth === 0 && bracketDepth === 0) {
-        if (token.type === 'Operator' && ['=', '+=', '-=', '*=', '/='].includes(token.value)) {
+        if (token.type === 'Operator' && ['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '>>>='].includes(token.value)) {
           return true;
         }
       }
@@ -709,7 +944,7 @@ export class Parser {
   private parseAssignmentExpression(): AssignmentStatementNode {
     const target = this.parseExpression(1); // parse target (higher than assignment precedence)
     const opToken = this.consume('Operator');
-    if (!['=', '+=', '-=', '*=', '/='].includes(opToken.value)) {
+    if (!['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '>>>='].includes(opToken.value)) {
       throw new JavaSyntaxError(`Expected assignment operator, got '${opToken.value}'`, opToken.line, opToken.col);
     }
     const val = this.parseExpression();
@@ -778,12 +1013,47 @@ export class Parser {
     // Binary expressions
     while (true) {
       const token = this.peek();
-      if (token.type !== 'Operator') break;
+      if (token.type !== 'Operator' && !(token.type === 'Keyword' && token.value === 'instanceof')) break;
 
       const opPrecedence = this.getOperatorPrecedence(token.value);
       if (opPrecedence < precedence) break;
 
-      this.consume(); // consume operator
+      this.consume(); // consume operator/keyword
+
+      if (token.value === '?') {
+        const thenExpr = this.parseExpression();
+        this.consume('Operator', ':');
+        const elseExpr = this.parseExpression(opPrecedence); // right-associative
+        left = {
+          type: 'TernaryExpression',
+          condition: left,
+          thenExpr,
+          elseExpr,
+          line: left.line
+        } as TernaryExpressionNode;
+        continue;
+      }
+
+      if (token.value === 'instanceof') {
+        let checkType = '';
+        if (this.peek().type === 'Keyword') {
+          checkType = this.consume().value;
+        } else {
+          checkType = this.consume('Identifier').value;
+        }
+        if (this.match('Punctuation', '[')) {
+          this.consume('Punctuation', ']');
+          checkType += '[]';
+        }
+        left = {
+          type: 'InstanceofExpression',
+          expression: left,
+          checkType,
+          line: left.line
+        } as InstanceofExpressionNode;
+        continue;
+      }
+
       const right = this.parseExpression(opPrecedence + 1);
       left = {
         type: 'BinaryExpression',
@@ -797,16 +1067,61 @@ export class Parser {
     return left;
   }
 
+  private isCast(): boolean {
+    let index = this.pos + 1;
+    if (index >= this.tokens.length) return false;
+    
+    const token = this.tokens[index];
+    if (token.type === 'Keyword' && ['int', 'double', 'boolean', 'char', 'String', 'long', 'float', 'short', 'byte', 'var'].includes(token.value)) {
+      index++;
+      if (this.tokens[index]?.value === '[') {
+        index += 2;
+      }
+      return this.tokens[index]?.value === ')';
+    }
+    if (token.type === 'Identifier') {
+      index++;
+      if (this.tokens[index]?.value === '<') {
+        let depth = 1;
+        index++;
+        while (depth > 0 && index < this.tokens.length) {
+          if (this.tokens[index].value === '<') depth++;
+          else if (this.tokens[index].value === '>') depth--;
+          index++;
+        }
+      }
+      if (this.tokens[index]?.value === '[') {
+        index += 2;
+      }
+      return this.tokens[index]?.value === ')';
+    }
+    return false;
+  }
+
   private parsePrimary(): ExpressionNode {
     const token = this.peek();
 
     if (token.type === 'Number') {
       this.consume();
-      const hasDot = token.value.includes('.');
+      let valStr = token.value;
+      let valType: JavaType = 'int';
+      const lastChar = valStr[valStr.length - 1];
+      if (['L', 'l'].includes(lastChar)) {
+        valType = 'long';
+        valStr = valStr.slice(0, -1);
+      } else if (['F', 'f'].includes(lastChar)) {
+        valType = 'float';
+        valStr = valStr.slice(0, -1);
+      } else if (['D', 'd'].includes(lastChar)) {
+        valType = 'double';
+        valStr = valStr.slice(0, -1);
+      } else if (valStr.includes('.')) {
+        valType = 'double';
+      }
       return {
         type: 'Literal',
-        valueType: hasDot ? 'double' : 'int',
-        value: Number(token.value),
+        valueType: valType,
+        value: Number(valStr),
         line: token.line
       };
     }
@@ -885,6 +1200,24 @@ export class Parser {
     }
 
     if (token.type === 'Punctuation' && token.value === '(') {
+      if (this.isCast()) {
+        this.consume('Punctuation', '(');
+        const castType = this.parseType();
+        let isArray = false;
+        if (this.match('Punctuation', '[')) {
+          this.consume('Punctuation', ']');
+          isArray = true;
+        }
+        this.consume('Punctuation', ')');
+        const expr = this.parseExpression(10);
+        return {
+          type: 'CastExpression',
+          castType: isArray ? 'reference' : castType,
+          expression: expr,
+          line: token.line
+        } as CastExpressionNode;
+      }
+
       this.consume();
       const expr = this.parseExpression();
       this.consume('Punctuation', ')');
@@ -892,7 +1225,7 @@ export class Parser {
     }
 
     // Unary prefix operators
-    if (token.type === 'Operator' && ['!', '-', '++', '--'].includes(token.value)) {
+    if (token.type === 'Operator' && ['!', '-', '~', '++', '--'].includes(token.value)) {
       this.consume();
       const expr = this.parseExpression(10); // high precedence for unary
       return {
@@ -966,6 +1299,7 @@ export class Parser {
 
     // Otherwise, it's new Object(...)
     const className = this.consume('Identifier').value;
+    this.skipGenerics();
     this.consume('Punctuation', '(');
     const args = this.parseArguments();
     this.consume('Punctuation', ')');
@@ -991,25 +1325,38 @@ export class Parser {
 
   private getOperatorPrecedence(op: string): number {
     switch (op) {
-      case '||':
+      case '?':
         return 1;
-      case '&&':
+      case '||':
         return 2;
+      case '&&':
+        return 3;
       case '==':
       case '!=':
-        return 3;
+        return 4;
       case '<':
       case '<=':
       case '>':
       case '>=':
-        return 4;
+      case 'instanceof':
+        return 5;
+      case '|':
+        return 6;
+      case '^':
+        return 7;
+      case '&':
+        return 8;
+      case '<<':
+      case '>>':
+      case '>>>':
+        return 9;
       case '+':
       case '-':
-        return 5;
+        return 10;
       case '*':
       case '/':
       case '%':
-        return 6;
+        return 11;
       default:
         return 0;
     }
