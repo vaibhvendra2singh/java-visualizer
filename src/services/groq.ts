@@ -15,35 +15,49 @@ interface GroqResponse {
   }>;
 }
 
-async function callGroq(messages: GroqMessage[], maxTokens = 1024, temperature = 0.3): Promise<string> {
-  try {
-    const res = await fetch('/api/groq/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-        stream: false
-      })
-    });
+async function callGroq(messages: GroqMessage[], maxTokens = 1024, temperature = 0.3, retries = 3): Promise<string> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch('/api/groq/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages,
+          max_tokens: maxTokens,
+          temperature,
+          stream: false
+        })
+      });
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error('[Groq API Error]', res.status, errorText);
-      throw new Error(`Groq API error: ${res.status}`);
+      if (res.status === 429 && i < retries - 1) {
+        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+        console.warn(`[Groq] Rate limited (429). Retrying in ${Math.round(delay)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('[Groq API Error]', res.status, errorText);
+        throw new Error(`Groq API error: ${res.status}`);
+      }
+
+      const data: GroqResponse = await res.json();
+      return data.choices[0]?.message?.content || '';
+    } catch (err) {
+      if (i === retries - 1) {
+        console.error('[Groq Service Error]', err);
+        throw err;
+      }
+      const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-
-    const data: GroqResponse = await res.json();
-    return data.choices[0]?.message?.content || '';
-  } catch (err) {
-    console.error('[Groq Service Error]', err);
-    throw err;
   }
+  return '';
 }
 
 // ─── Code Summary & Concept Tags ─────────────────────────────────────────────
