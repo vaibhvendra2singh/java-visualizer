@@ -36,7 +36,7 @@ export const VariableTracker: React.FC = () => {
             {variables.map((v, i) => {
               const isChanged = changedVarName === v.name;
               const isRef = v.value.type === 'reference';
-              const isHovered = isRef && v.value.refId !== null && v.value.refId === hoveredRefId;
+              const isHovered = v.value.type === 'reference' && v.value.refId !== null && v.value.refId === hoveredRefId;
               const valStr = v.value.type === 'primitive'
                 ? v.value.value === null ? 'null' : String(v.value.value)
                 : v.value.refId === null ? 'null' : `ref@${v.value.refId}`;
@@ -48,12 +48,12 @@ export const VariableTracker: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                   onMouseEnter={() => {
-                    if (isRef && v.value.refId !== null) {
+                    if (v.value.type === 'reference' && v.value.refId !== null) {
                       setHoveredRefId(v.value.refId);
                     }
                   }}
                   onMouseLeave={() => {
-                    if (isRef) {
+                    if (v.value.type === 'reference') {
                       setHoveredRefId(null);
                     }
                   }}

@@ -3,11 +3,53 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    
+    <!-- PWA primary configuration -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#09090b" />
+    
+    <!-- iOS meta tags and configuration -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="JavaVisualizer" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    
     <title>visualizer</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Service Worker registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => {
+              console.log('Service Worker registered successfully with scope:', reg.scope);
+              
+              // Detect and handle updates automatically
+              reg.onupdatefound = () => {
+                const installingWorker = reg.installing;
+                if (installingWorker) {
+                  installingWorker.onstatechange = () => {
+                    if (installingWorker.state === 'installed') {
+                      if (navigator.serviceWorker.controller) {
+                        console.log('New content is available; please refresh.');
+                        // Force clean reload
+                        window.location.reload();
+                      }
+                    }
+                  };
+                }
+              };
+            })
+            .catch((err) => {
+              console.error('Service Worker registration failed:', err);
+            });
+        });
+      }
+    </script>
   </body>
 </html>

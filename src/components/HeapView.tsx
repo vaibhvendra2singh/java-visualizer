@@ -43,7 +43,6 @@ export const HeapView: React.FC = () => {
   const inlinedRefs = new Set<number>();
 
   Object.entries(heap).forEach(([rawRefId, obj]) => {
-    const refId = Number(rawRefId);
 
     // 1. If an object references a 2D array, we inline that array and its rows
     if (obj.type === 'object') {
@@ -114,7 +113,7 @@ const HeapObjectCard: React.FC<{
   obj: HeapObject;
   heap: any;
 }> = ({ refId, obj, heap }) => {
-  const { activeStep, currentStepIndex, hoveredRefId, setHoveredRefId } = usePlayback();
+  const { activeStep, hoveredRefId, setHoveredRefId } = usePlayback();
   const isCardHovered = hoveredRefId === refId;
   const elementId = `heap-object-${refId}`;
 
@@ -206,13 +205,6 @@ const HeapObjectCard: React.FC<{
 
               const fieldElementId = `heap-field-${refId}-${fieldName}`;
               const val = fieldState.value;
-
-              const getValueStr = () => {
-                if (val.type === 'primitive') {
-                  return val.value === null ? 'null' : String(val.value);
-                }
-                return val.refId === null ? 'null' : `ref@${val.refId}`;
-              };
 
               return (
                 <motion.div

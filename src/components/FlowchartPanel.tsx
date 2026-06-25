@@ -198,7 +198,6 @@ export const FlowchartPanel: React.FC = () => {
           {/* HTML Nodes Layer */}
           {graph.nodes.map((node) => {
             const isActive = activeNodeId === node.id;
-            const isVisited = visitedNodes.has(node.id) && !isActive;
             const isGhost = ghostNodes.includes(node.id) && !isActive;
 
             // Dimensions: shape-specific

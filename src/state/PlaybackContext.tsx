@@ -24,6 +24,7 @@ export interface PlaybackContextType {
   setInputText: (text: string) => void;
   hoveredRefId: number | null;
   setHoveredRefId: (refId: number | null) => void;
+  reset: () => void;
 }
 
 const PlaybackContext = createContext<PlaybackContextType | undefined>(undefined);

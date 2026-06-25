@@ -407,17 +407,17 @@ export const SvgArrows: React.FC = () => {
 
       {/* Render temporary line-to-variable change arrow */}
       <AnimatePresence>
-        {showChangeArrow && changeArrow && (() => {
-          const dx = Math.max(40, Math.abs(changeArrow.x2 - changeArrow.x1) / 3);
-          const cx1 = changeArrow.x2 > changeArrow.x1 ? changeArrow.x1 + dx : changeArrow.x1 - dx;
-          const cy1 = changeArrow.y1;
-          const cx2 = changeArrow.x2 > changeArrow.x1 ? changeArrow.x2 - dx : changeArrow.x2 + dx;
-          const cy2 = changeArrow.y2;
-          const pathData = `M ${changeArrow.x1} ${changeArrow.y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${changeArrow.x2} ${changeArrow.y2}`;
+        {showChangeArrow && changeArrow && ((arrow) => {
+          const dx = Math.max(40, Math.abs(arrow.x2 - arrow.x1) / 3);
+          const cx1 = arrow.x2 > arrow.x1 ? arrow.x1 + dx : arrow.x1 - dx;
+          const cy1 = arrow.y1;
+          const cx2 = arrow.x2 > arrow.x1 ? arrow.x2 - dx : arrow.x2 + dx;
+          const cy2 = arrow.y2;
+          const pathData = `M ${arrow.x1} ${arrow.y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${arrow.x2} ${arrow.y2}`;
 
           return (
             <motion.g
-              key={changeArrow.id}
+              key={arrow.id}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -443,7 +443,7 @@ export const SvgArrows: React.FC = () => {
               />
             </motion.g>
           );
-        })()}
+        })(changeArrow)}
       </AnimatePresence>
     </svg>
   );

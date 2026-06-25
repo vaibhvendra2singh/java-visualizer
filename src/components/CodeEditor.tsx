@@ -7,7 +7,6 @@ import { useAI } from '../state/AIContext';
 import { lineHighlightExtension, setHighlightLine, EditorView } from './EditorExtensions';
 import { AICodeSummary } from './AICodeSummary';
 import { Play, Edit2, AlertCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 export const CodeEditor: React.FC = () => {
   const {
@@ -23,7 +22,6 @@ export const CodeEditor: React.FC = () => {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const [localCode, setLocalCode] = useState(code);
   const [isEditable, setIsEditable] = useState(true);
-  const [highlightRect, setHighlightRect] = useState<{ top: number; right: number; height: number } | null>(null);
 
   useEffect(() => {
     setLocalCode(code);
@@ -52,76 +50,6 @@ export const CodeEditor: React.FC = () => {
       });
     }
   }, [activeStep, isEditable]);
-
-  // Track the bounding rect of the highlighted line in the editor
-  useEffect(() => {
-    if (!activeStep || isEditable) {
-      setHighlightRect(null);
-      return;
-    }
-
-    let active = true;
-    const updatePosition = () => {
-      if (!active) return;
-      const lineEl = document.querySelector('.cm-highlight-line');
-      const editorEl = lineEl?.closest('.cm-editor');
-      if (lineEl && editorEl) {
-        const lineRect = lineEl.getBoundingClientRect();
-        const editorRect = editorEl.getBoundingClientRect();
-        // Check if the line is currently within the visible editor bounds
-        const isVisible = lineRect.bottom > editorRect.top && lineRect.top < editorRect.bottom;
-        if (isVisible) {
-          setHighlightRect({
-            top: lineRect.top - editorRect.top,
-            right: editorRect.right - lineRect.right,
-            height: lineRect.height
-          });
-        } else {
-          setHighlightRect(null);
-        }
-      } else {
-        setHighlightRect(null);
-      }
-    };
-
-    const tick = () => {
-      updatePosition();
-      if (active) {
-        requestAnimationFrame(tick);
-      }
-    };
-    requestAnimationFrame(tick);
-
-    return () => {
-      active = false;
-    };
-  }, [activeStep, isEditable]);
-
-  const parseExplanation = (explanation: string) => {
-    // 1. Check if it's a condition check
-    const condMatch = explanation.match(/(Check condition|Check loop condition):\s*(.+?)\s*\((.+?)\)\s*->\s*(true|false)/i);
-    if (condMatch) {
-      return {
-        type: 'condition',
-        expression: condMatch[2],
-        values: condMatch[3],
-        outcome: condMatch[4].toUpperCase()
-      };
-    }
-
-    // 2. Check if it's a calculation (assignment or declaration with 'via')
-    const calcMatch = explanation.match(/(Declare|Set|Set field|Set\s*\[.+?\])\s+(.+?)\s*=\s*(.+?)\s*\(via\s+(.+?)\s*=\s*(.+?)\)/i);
-    if (calcMatch) {
-      return {
-        type: 'calculation',
-        expression: calcMatch[4],
-        values: calcMatch[5],
-        outcome: calcMatch[3]
-      };
-    }
-
-    return null;
-  };
 
   const { runAnalysis, clearAI } = useAI();
 

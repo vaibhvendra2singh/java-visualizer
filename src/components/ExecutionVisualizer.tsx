@@ -523,7 +523,6 @@ export const ExecutionVisualizer: React.FC = () => {
                 {trace.map((step, idx) => {
                   const isActive = idx === currentStepIndex;
                   const isPast = idx < currentStepIndex;
-                  const meta = getStepMeta(step.explanation);
                   const changed = getChangedVar(step);
 
                   return (

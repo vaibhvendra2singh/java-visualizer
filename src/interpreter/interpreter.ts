@@ -239,7 +239,7 @@ class Interpreter {
       const paramDesc = targetMethod.parameters.length > 0
         ? ` with default args (${targetMethod.parameters.map(p => `${p.dataType} ${p.name} = ${p.dataType === 'int' || p.dataType === 'double' ? '0' : p.dataType === 'boolean' ? 'false' : 'ref@empty'}`).join(', ')})`
         : '';
-      this.addStep(targetMethod.line, `Start ${targetMethod.name}()`);
+      this.addStep(targetMethod.line, `Start ${targetMethod.name}()${paramDesc}`);
 
       try {
         this.executeBlock(targetMethod.body);

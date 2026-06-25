@@ -8,12 +8,14 @@ import { HeapView } from './components/HeapView';
 import { ConsoleView } from './components/ConsoleView';
 import { PlaybackControls } from './components/PlaybackControls';
 import { SvgArrows } from './components/SvgArrows';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Download } from 'lucide-react';
 import { VariableTracker } from './components/VariableTracker';
 import { FloatingModules } from './components/FloatingModules';
 
 const AppContent: React.FC = () => {
   const { theme, toggleTheme } = usePlayback();
+  const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
+  const [showInstallBtn, setShowInstallBtn] = React.useState(false);
 
   // Apply light-mode class to HTML root element
   useEffect(() => {
@@ -23,6 +25,42 @@ const AppContent: React.FC = () => {
       document.documentElement.classList.remove('light-mode');
     }
   }, [theme]);
+
+  // Handle PWA installation prompt
+  useEffect(() => {
+    const handler = (e: Event) => {
+      // Prevent the browser's default install prompt from showing
+      e.preventDefault();
+      // Save the event so it can be triggered later.
+      setDeferredPrompt(e);
+      // Show the install button in the UI
+      setShowInstallBtn(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Detect if already installed/running in standalone mode
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
+    if (isStandalone) {
+      setShowInstallBtn(false);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    // Show the install prompt
+    deferredPrompt.prompt();
+    // Wait for the user to respond to the prompt
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to the install prompt: ${outcome}`);
+    // Clear the deferred prompt (it can only be used once)
+    setDeferredPrompt(null);
+    setShowInstallBtn(false);
+  };
   
 
   return (
@@ -41,8 +79,18 @@ const AppContent: React.FC = () => {
           </h1>
         </div>
 
-        {/* Right Actions: Theme Toggle */}
-        <div className="ml-auto z-10">
+        {/* Right Actions: Install App & Theme Toggle */}
+        <div className="ml-auto z-10 flex items-center gap-3">
+          {showInstallBtn && (
+            <button
+              onClick={handleInstallClick}
+              title="Install Java Code Visualizer as a PWA"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs font-semibold text-zinc-400 hover:text-white hover:border-zinc-700 transition-all duration-200 cursor-pointer animate-pulse"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Install App</span>
+            </button>
+          )}
           <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
