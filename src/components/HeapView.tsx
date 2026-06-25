@@ -42,7 +42,7 @@ export const HeapView: React.FC = () => {
   // Compute all inlined refs to filter them out of the root layout
   const inlinedRefs = new Set<number>();
 
-  Object.entries(heap).forEach(([rawRefId, obj]) => {
+  Object.values(heap).forEach((obj) => {
 
     // 1. If an object references a 2D array, we inline that array and its rows
     if (obj.type === 'object') {

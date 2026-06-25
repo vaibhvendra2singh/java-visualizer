@@ -407,7 +407,8 @@ export const SvgArrows: React.FC = () => {
 
       {/* Render temporary line-to-variable change arrow */}
       <AnimatePresence>
-        {showChangeArrow && changeArrow && ((arrow) => {
+        {showChangeArrow && changeArrow && (() => {
+          const arrow = changeArrow!;
           const dx = Math.max(40, Math.abs(arrow.x2 - arrow.x1) / 3);
           const cx1 = arrow.x2 > arrow.x1 ? arrow.x1 + dx : arrow.x1 - dx;
           const cy1 = arrow.y1;
@@ -443,7 +444,7 @@ export const SvgArrows: React.FC = () => {
               />
             </motion.g>
           );
-        })(changeArrow)}
+        })()}
       </AnimatePresence>
     </svg>
   );
