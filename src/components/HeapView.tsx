@@ -187,7 +187,7 @@ const HeapObjectCard: React.FC<{
         isCardHovered ? 'bg-white text-black' : 'bg-zinc-900 border-zinc-800 text-white'
       }`}>
         <span>
-          {obj.type === 'object' ? obj.className : `${obj.elementType}[]`}
+          {obj.type === 'array' ? `${obj.elementType}[]` : obj.className}
         </span>
         <span className={`text-[10px] transition-colors duration-300 ${isCardHovered ? 'text-black/60' : 'text-zinc-400'}`}>ref@{refId}</span>
       </div>
@@ -372,6 +372,151 @@ const HeapObjectCard: React.FC<{
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* List representations */}
+        {obj.type === 'list' && (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap gap-2 py-1 items-center">
+              {obj.elements.map((cellVal, idx) => {
+                const isChanged =
+                  activeStep?.changedElement?.type === 'heap' &&
+                  activeStep?.changedElement?.refId === refId &&
+                  activeStep?.changedElement?.field === idx;
+
+                const cellElementId = `heap-list-cell-${refId}-${idx}`;
+
+                return (
+                  <div key={idx} className="flex flex-col items-center relative">
+                    <span className="text-[9px] font-mono text-zinc-550 mb-1">
+                      [{idx}]
+                    </span>
+
+                    <motion.div
+                      id={cellElementId}
+                      animate={isChanged ? {
+                        rotateY: [0, 180, 360],
+                        scale: [1, 1.15, 1],
+                        borderColor: ['#27272a', '#ffffff', '#27272a'],
+                        backgroundColor: [
+                          'rgba(39, 39, 42, 0.8)',
+                          'rgba(255, 255, 255, 0.2)',
+                          'rgba(9, 9, 11, 0.8)'
+                        ],
+                        transition: { duration: 0.8, ease: 'easeInOut' }
+                      } : {}}
+                      className="w-12 h-10 flex items-center justify-center rounded-lg border border-zinc-850 bg-zinc-950/80 text-[11px] font-mono select-none"
+                    >
+                      {cellVal.type === 'primitive' ? (
+                        <span className="text-white font-semibold truncate px-1">
+                          {cellVal.value === null ? 'null' : String(cellVal.value)}
+                        </span>
+                      ) : (
+                        <div className="flex flex-col items-center">
+                          {cellVal.refId === null ? (
+                            <span className="text-zinc-650 text-[10px]">null</span>
+                          ) : (
+                            <>
+                              <span className="text-[9px] text-white font-bold">
+                                ref@{cellVal.refId}
+                              </span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-white border border-zinc-400 mt-0.5"></span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Set representations */}
+        {obj.type === 'set' && (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap gap-2 py-1 items-center">
+              {obj.elements.map((cellVal, idx) => {
+                const isChanged =
+                  activeStep?.changedElement?.type === 'heap' &&
+                  activeStep?.changedElement?.refId === refId &&
+                  activeStep?.changedElement?.field === idx;
+
+                const cellElementId = `heap-set-cell-${refId}-${idx}`;
+
+                return (
+                  <div key={idx} className="flex flex-col items-center relative">
+                    <motion.div
+                      id={cellElementId}
+                      animate={isChanged ? {
+                        scale: [1, 1.15, 1],
+                        borderColor: ['#27272a', '#ffffff', '#27272a'],
+                        transition: { duration: 0.8 }
+                      } : {}}
+                      className="min-w-[48px] h-10 px-2 flex items-center justify-center rounded-full border border-zinc-850 bg-zinc-950/80 text-[11px] font-mono select-none"
+                    >
+                      {cellVal.type === 'primitive' ? (
+                        <span className="text-white font-semibold truncate px-1">
+                          {cellVal.value === null ? 'null' : String(cellVal.value)}
+                        </span>
+                      ) : (
+                        <div className="flex flex-col items-center">
+                          {cellVal.refId === null ? (
+                            <span className="text-zinc-650 text-[10px]">null</span>
+                          ) : (
+                            <span className="text-[9px] text-white font-bold">
+                              ref@{cellVal.refId}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Map representations */}
+        {obj.type === 'map' && (
+          <div className="flex flex-col gap-2">
+            {obj.entries.map((entry, idx) => {
+              const isChanged =
+                activeStep?.changedElement?.type === 'heap' &&
+                activeStep?.changedElement?.refId === refId &&
+                activeStep?.changedElement?.field === idx;
+
+              return (
+                <motion.div
+                  key={idx}
+                  animate={isChanged ? {
+                    scale: [1, 1.05, 1],
+                    backgroundColor: ['rgba(39, 39, 42, 0)', 'rgba(255, 255, 255, 0.1)', 'rgba(39, 39, 42, 0)'],
+                    transition: { duration: 0.6 }
+                  } : {}}
+                  className="flex items-center gap-2 border border-zinc-850/50 bg-zinc-950/40 p-1.5 rounded-lg text-[11px] font-mono"
+                >
+                  <div className="flex-1 text-right text-zinc-400 truncate">
+                    {entry.key.type === 'primitive' ? (
+                      entry.key.value === null ? 'null' : String(entry.key.value)
+                    ) : (
+                      `ref@${entry.key.refId}`
+                    )}
+                  </div>
+                  <span className="text-zinc-600 font-bold">➔</span>
+                  <div className="flex-1 text-left text-white font-semibold truncate">
+                    {entry.value.type === 'primitive' ? (
+                      entry.value.value === null ? 'null' : String(entry.value.value)
+                    ) : (
+                      `ref@${entry.value.refId}`
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>

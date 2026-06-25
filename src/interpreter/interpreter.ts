@@ -1470,11 +1470,19 @@ class Interpreter {
             const fromIdx = argValues[1] !== undefined ? Number(argValues[1]) : 0;
             const toIdx = argValues[2] !== undefined ? Number(argValues[2]) : heapObj.values.length;
             const slice = heapObj.values.slice(fromIdx, toIdx);
+            const getComparable = (state: VariableState) => {
+              if (state.value.type === 'primitive') {
+                return state.value.value;
+              }
+              return state.value.refId;
+            };
             slice.sort((a, b) => {
-              if (a.value.value === null) return 1;
-              if (b.value.value === null) return -1;
-              if (a.value.value < b.value.value) return -1;
-              if (a.value.value > b.value.value) return 1;
+              const valA = getComparable(a);
+              const valB = getComparable(b);
+              if (valA === null || valA === undefined) return 1;
+              if (valB === null || valB === undefined) return -1;
+              if (valA < valB) return -1;
+              if (valA > valB) return 1;
               return 0;
             });
             heapObj.values.splice(fromIdx, slice.length, ...slice);
@@ -2031,11 +2039,6 @@ class Interpreter {
     return false;
   }
 
-  private isMathCall(expr: any): boolean {
-    if (!expr.object) return false;
-    const obj = expr.object;
-    return obj.type === 'Identifier' && obj.name === 'Math';
-  }
 
   private evaluateMathCall(expr: any): VariableValue {
     const args = expr.arguments.map((arg: any) => this.evaluateExpression(arg));

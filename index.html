@@ -23,32 +23,54 @@
     
     <!-- Service Worker registration -->
     <script>
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((reg) => {
-              console.log('Service Worker registered successfully with scope:', reg.scope);
-              
-              // Detect and handle updates automatically
-              reg.onupdatefound = () => {
-                const installingWorker = reg.installing;
-                if (installingWorker) {
-                  installingWorker.onstatechange = () => {
-                    if (installingWorker.state === 'installed') {
-                      if (navigator.serviceWorker.controller) {
-                        console.log('New content is available; please refresh.');
-                        // Force clean reload
-                        window.location.reload();
-                      }
-                    }
-                  };
+        if (isLocalhost) {
+          // Unregister existing service workers on localhost to avoid caching issues during development
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            let cleared = false;
+            for (const registration of registrations) {
+              registration.unregister().then((success) => {
+                if (success && !cleared) {
+                  cleared = true;
+                  console.log('Successfully unregistered service worker on localhost');
+                  // Clear caches as well to be sure
+                  caches.keys().then((keys) => {
+                    return Promise.all(keys.map(key => caches.delete(key)));
+                  }).then(() => {
+                    window.location.reload();
+                  });
                 }
-              };
-            })
-            .catch((err) => {
-              console.error('Service Worker registration failed:', err);
-            });
-        });
+              });
+            }
+          });
+        } else {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+              .then((reg) => {
+                console.log('Service Worker registered successfully with scope:', reg.scope);
+                
+                // Detect and handle updates automatically
+                reg.onupdatefound = () => {
+                  const installingWorker = reg.installing;
+                  if (installingWorker) {
+                    installingWorker.onstatechange = () => {
+                      if (installingWorker.state === 'installed') {
+                        if (navigator.serviceWorker.controller) {
+                          console.log('New content is available; please refresh.');
+                          // Force clean reload
+                          window.location.reload();
+                        }
+                      }
+                    };
+                  }
+                };
+              })
+              .catch((err) => {
+                console.error('Service Worker registration failed:', err);
+              });
+          });
+        }
       }
     </script>
   </body>
