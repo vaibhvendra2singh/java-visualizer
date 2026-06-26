@@ -11,9 +11,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api/groq': {
-        target: 'https://api.groq.com/openai/v1/chat/completions',
+        target: 'https://api.groq.com',
         changeOrigin: true,
-        rewrite: () => '',
+        rewrite: (_path) => '/openai/v1/chat/completions',
         secure: true
       }
     }
